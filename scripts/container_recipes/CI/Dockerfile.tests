@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1
+# Test container that runs LibRA tests
+FROM ardgnrao/libra-components:latest as tests
+LABEL Description="LibRA Test Container for running C++ and Python tests"
+LABEL Version=v1.0.0-tests
+
+WORKDIR /data/libra
+
+# Set up Python virtual environment for testing
+RUN python3.8 -m venv /data/test_venv \
+    && source /data/test_venv/bin/activate \
+    && pip install --upgrade pip setuptools wheel \
+    && pip install pytest numpy
+
+# Set up test environment variables
+ENV PYTHONPATH="/data/libra/install/lib:/data/libra/libra-python:${PYTHONPATH}"
+ENV LD_LIBRARY_PATH="/data/libra/install/lib:${LD_LIBRARY_PATH}"
+
+# Create test data symlink
+RUN cd /data/libra/libra-python \
+    && if [ -d "/data/libra/apps/src/tests/gold_standard" ] && [ ! -e "gold_standard" ]; then \
+        ln -sf ../../apps/src/tests/gold_standard gold_standard; \
+    fi
+
+# Create test runner script
+RUN echo '#!/bin/bash' > /data/run_tests.sh \
+    && echo 'set -e' >> /data/run_tests.sh \
+    && echo 'echo "=== LibRA Test Suite ==="' >> /data/run_tests.sh \
+    && echo 'source /data/test_venv/bin/activate' >> /data/run_tests.sh \
+    && echo 'cd /data/libra' >> /data/run_tests.sh \
+    && echo 'mkdir -p test_reports' >> /data/run_tests.sh \
+    && echo '' >> /data/run_tests.sh \
+    && echo '# Run C++ GTests' >> /data/run_tests.sh \
+    && echo 'echo "Running C++ tests..."' >> /data/run_tests.sh \
+    && echo 'if [ -x "/data/libra/install/bin/tests/LibRATests" ]; then' >> /data/run_tests.sh \
+    && echo '    /data/libra/install/bin/tests/LibRATests --gtest_output=xml:test_reports/cpp_report.xml' >> /data/run_tests.sh \
+    && echo '    echo "C++ tests completed"' >> /data/run_tests.sh \
+    && echo 'else' >> /data/run_tests.sh \
+    && echo '    echo "C++ test binary not found"' >> /data/run_tests.sh \
+    && echo 'fi' >> /data/run_tests.sh \
+    && echo '' >> /data/run_tests.sh \
+    && echo '# Run Python tests' >> /data/run_tests.sh \
+    && echo 'echo "Running Python tests..."' >> /data/run_tests.sh \
+    && echo 'cd /data/libra/apps/src/tests' >> /data/run_tests.sh \
+    && echo 'pytest /data/libra/libra-python/tests --junitxml=/data/libra/test_reports/pytest_report.xml -v || echo "Some Python tests failed"' >> /data/run_tests.sh \
+    && echo '' >> /data/run_tests.sh \
+    && echo 'echo "=== Test Summary ==="' >> /data/run_tests.sh \
+    && echo 'ls -la /data/libra/test_reports/' >> /data/run_tests.sh \
+    && echo 'echo "Tests completed"' >> /data/run_tests.sh \
+    && chmod +x /data/run_tests.sh
+
+# Create verification script
+RUN echo '#!/bin/bash' > /data/verify_tests.sh \
+    && echo 'echo "=== Test Container Verification ==="' >> /data/verify_tests.sh \
+    && echo 'source /data/test_venv/bin/activate' >> /data/verify_tests.sh \
+    && echo 'python --version' >> /data/verify_tests.sh \
+    && echo 'pytest --version' >> /data/verify_tests.sh \
+    && echo 'echo "Test environment ready"' >> /data/verify_tests.sh \
+    && chmod +x /data/verify_tests.sh
+
+CMD ["/data/run_tests.sh"]

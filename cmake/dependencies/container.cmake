@@ -119,7 +119,8 @@ if(LIBRA_BUILD_DOCKER_CONTAINER OR LIBRA_BUILD_SINGULARITY_CONTAINER)
     message("${LIBRA_ID}   OS: ${LIBRA_CONTAINER_OS} (${CONTAINER_OS_DESCRIPTION})")
     message("${LIBRA_ID}   CUDA Arch: ${CONTAINER_CUDA_ARCH}")
     message("${LIBRA_ID}   Git SHA: ${GIT_COMMIT_SHA}")
-    message("${LIBRA_ID}   Build Cores: ${NCORES}")
+    set(NPROC ${NCORES})
+    message("${LIBRA_ID}   Build Cores: ${NPROC}")
 
     # Prepare OS-specific content for templates
     if(CONTAINER_OS_VARIANT STREQUAL "rockylinux")

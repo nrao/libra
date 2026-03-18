@@ -2,16 +2,19 @@ workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "container-production"'
     - if: '$CI_COMMIT_MESSAGE =~ /CI BUILD/'
     - if: '$CI_COMMIT_MESSAGE =~ /SPACK BUILD/'
     - if: '$FORCE_CI == "true"'
     - if: '$FORCE_SPACK == "true"'
+    - if: '$FORCE_CONTAINER == "true"'
     - when: never
 
 stages:
   - build
   - test
   - spack-test
+  - container
 
 variables:
   CCACHE_BASEDIR: $CI_PROJECT_DIR
@@ -93,8 +96,8 @@ build-job:
     - which nvcc
     - mkdir -p build
     - cd build
-    - cmake -DApps_BUILD_TESTS=ON -DNCORES=8 -DKokkos_CUDA_ARCH_NAME=VOLTA70 ..
-    - make
+    - time cmake -DApps_BUILD_TESTS=ON -DNCORES=8 -DKokkos_CUDA_ARCH_NAME=VOLTA70 ..
+    - time make
   after_script:
     - echo "=== ccache statistics ==="
     - ccache --show-stats || true
@@ -150,7 +153,7 @@ test-job:
     for test_binary in "${test_binaries[@]}"; do
         if [ -x "${base_path}/install/bin/tests/${test_binary}" ]; then
             echo "Running ${test_binary}..."
-            "${base_path}/install/bin/tests/${test_binary}" --gtest_output=xml:"${base_path}/libra-python/reports/cpp_${test_binary}_report.xml"
+            "${base_path}/install/bin/tests/${test_binary}" --gtest_output=xml:"${base_path}/apps/src/tests/cpp_report.xml"
         else
             echo "C++ test binary not found: ${base_path}/install/bin/tests/${test_binary}"
         fi
@@ -177,7 +180,6 @@ test-job:
     ccache --show-stats || true
     echo "=== Cleaning up venv ==="
     rm -rf "${CI_BUILDS_DIR}/build_venv_${CI_PIPELINE_ID}"
-    rm -rf ${base_path}/libra-python/reports
     rm -rf ${base_path}/cpp_test_dir
   timeout: 1h
 
@@ -410,4 +412,122 @@ manual-spack:
   rules:
     - when: manual
   allow_failure: true
+
+# =============================================================================
+# Container Build Jobs
+# Run on dedicated Docker runner (tag: V-gxiUmx) using Docker-in-Docker.
+# Three layered jobs — each only fires when its inputs change.
+# Requires GitLab CI variables: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+# =============================================================================
+
+.container-common:
+  stage: container
+  tags:
+    - V-gxiUmx
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKERHUB_ORG: "ardgnrao"
+  before_script:
+    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN"
+    - git submodule sync
+    - git submodule update --init --recursive
+
+container-base:
+  extends: .container-common
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.base
+        - scripts/container_recipes/CI/readline.pc
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.base
+        - scripts/container_recipes/CI/readline.pc
+    - if: '$CI_COMMIT_BRANCH == "container-production"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.base
+        - scripts/container_recipes/CI/readline.pc
+    - if: '$FORCE_CONTAINER == "true"'
+    - when: never
+  script:
+    - |
+      time docker build \
+        -f scripts/container_recipes/CI/Dockerfile.base \
+        -t ${DOCKERHUB_ORG}/libra-base:${CI_COMMIT_SHORT_SHA} \
+        -t ${DOCKERHUB_ORG}/libra-base:latest \
+        scripts/container_recipes/CI/
+    - docker push ${DOCKERHUB_ORG}/libra-base:${CI_COMMIT_SHORT_SHA}
+    - docker push ${DOCKERHUB_ORG}/libra-base:latest
+
+container-deps:
+  extends: .container-common
+  needs:
+    - job: container-base
+      optional: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.deps
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.deps
+    - if: '$CI_COMMIT_BRANCH == "container-production"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.deps
+    - if: '$FORCE_CONTAINER == "true"'
+    - when: never
+  script:
+    - |
+      time docker build \
+        --build-arg Kokkos_CUDA_ARCH=Kokkos_ARCH_VOLTA70 \
+        --build-arg nproc=8 \
+        -f scripts/container_recipes/CI/Dockerfile.deps \
+        -t ${DOCKERHUB_ORG}/libra-deps:${CI_COMMIT_SHORT_SHA} \
+        -t ${DOCKERHUB_ORG}/libra-deps:latest \
+        scripts/container_recipes/CI/
+    - docker push ${DOCKERHUB_ORG}/libra-deps:${CI_COMMIT_SHORT_SHA}
+    - docker push ${DOCKERHUB_ORG}/libra-deps:latest
+
+container-components:
+  extends: .container-common
+  needs:
+    - job: container-deps
+      optional: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - src/**/*
+        - apps/**/*
+        - cmake/**/*
+        - CMakeLists.txt
+        - scripts/container_recipes/CI/Dockerfile.components
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - src/**/*
+        - apps/**/*
+        - cmake/**/*
+        - CMakeLists.txt
+        - scripts/container_recipes/CI/Dockerfile.components
+    - if: '$CI_COMMIT_BRANCH == "container-production"'
+      changes:
+        - src/**/*
+        - apps/**/*
+        - cmake/**/*
+        - CMakeLists.txt
+        - scripts/container_recipes/CI/Dockerfile.components
+    - if: '$FORCE_CONTAINER == "true"'
+    - when: never
+  script:
+    - |
+      time docker build \
+        --build-arg nproc=8 \
+        -f scripts/container_recipes/CI/Dockerfile.components \
+        -t ${DOCKERHUB_ORG}/libra-components:${CI_COMMIT_SHORT_SHA} \
+        -t ${DOCKERHUB_ORG}/libra-components:latest \
+        scripts/container_recipes/CI/
+    - docker push ${DOCKERHUB_ORG}/libra-components:${CI_COMMIT_SHORT_SHA}
+    - docker push ${DOCKERHUB_ORG}/libra-components:latest
 

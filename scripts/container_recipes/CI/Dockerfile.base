@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# Base container with CUDA 13.0 and system dependencies
+FROM nvidia/cuda:13.0.0-devel-rockylinux8 as base
+
+WORKDIR /data
+ADD readline.pc /data/
+LABEL Author=pjaganna@nrao.edu
+LABEL Version=v1.0.0-base
+LABEL Description="LibRA Base Container with CUDA 13.0 and system dependencies"
+
+# Install system packages and development tools
+RUN dnf -y clean all \
+    && dnf -y install epel-release \
+    && dnf install -y dnf-plugins-core \
+    && dnf config-manager --set-enabled powertools \
+    && dnf -y install git cmake gcc-c++ gcc-gfortran ccache flex bison tar curl bzip2 make \
+    && dnf -y install {gtest,readline,ncurses,blas,lapack,cfitsio,fftw,wcslib,gsl,eigen3,openmpi,python38}-devel \
+    && mv /data/readline.pc /usr/lib64/pkgconfig/ \
+    && dnf clean all
+
+# Set up environment variables for later stages
+ENV PATH=/data/libra/apps/src/:/data/libra/dependencies/linux_64b/bin/:/data/libra/dependencies/linux_64b/sbin/:$PATH
+ENV LD_LIBRARY_PATH=/data/libra/apps/install:/data/libra/dependencies/linux_64b/lib/:/usr/local/cuda-13.0/compat:$LD_LIBRARY_PATH
+ENV LIBRA_PATH=/data/libra
+
+# Clone LibRA repository
+RUN cd /data/ \
+    && git clone --recursive https://github.com/ARDG-NRAO/LibRA.git libra
+
+# Verify CUDA installation
+RUN nvcc --version \
+    && nvidia-smi || echo "GPU not available during build"
+
+# Create a simple verification script
+RUN echo '#!/bin/bash' > /data/verify_base.sh \
+    && echo 'echo "=== Base Container Verification ==="' >> /data/verify_base.sh \
+    && echo 'nvcc --version' >> /data/verify_base.sh \
+    && echo 'cmake --version' >> /data/verify_base.sh \
+    && echo 'gcc --version' >> /data/verify_base.sh \
+    && echo 'ls -la /data/libra/' >> /data/verify_base.sh \
+    && chmod +x /data/verify_base.sh
+
+CMD ["/bin/bash"]

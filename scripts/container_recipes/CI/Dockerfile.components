@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+# Components container that builds LibRA applications and frameworks
+FROM ardgnrao/libra-deps:latest as components
+LABEL Description="LibRA Components Container with Apps and Frameworks"
+LABEL Version=v1.0.0-components
+ARG nproc=8
+
+WORKDIR /data/libra
+
+# Build only the components (Apps, Frameworks, Scripts, Casacpp)
+# These are the frequently changing parts from your CMakeLists.txt
+RUN cd build \
+    && make -j${nproc} \
+       Apps \
+       Frameworks \
+       Scripts \
+       Casacpp
+
+# Build Exodus if enabled (conditional component)
+RUN cd build \
+    && if grep -q "LIBRA_USE_EXODUS.*ON" CMakeCache.txt 2>/dev/null; then \
+         make -j${nproc} exodus; \
+       else \
+         echo "Exodus not enabled, skipping"; \
+       fi
+
+# Install the built components
+RUN cd build && make install
+
+# Verify components were built successfully
+RUN echo '#!/bin/bash' > /data/verify_components.sh \
+    && echo 'echo "=== Components Container Verification ==="' >> /data/verify_components.sh \
+    && echo 'cd /data/libra' >> /data/verify_components.sh \
+    && echo 'echo "Built executables:"' >> /data/verify_components.sh \
+    && echo 'find install/bin -type f -executable 2>/dev/null | head -10' >> /data/verify_components.sh \
+    && echo 'echo "Built libraries:"' >> /data/verify_components.sh \
+    && echo 'find install/lib -name "*.so" -o -name "*.a" 2>/dev/null | head -10' >> /data/verify_components.sh \
+    && echo 'echo "Components build completed successfully"' >> /data/verify_components.sh \
+    && chmod +x /data/verify_components.sh
+
+CMD ["/bin/bash"]

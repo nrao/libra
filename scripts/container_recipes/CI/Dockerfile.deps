@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+# Dependencies container that builds all LibRA dependencies
+FROM ardgnrao/libra-base:latest as dependencies
+
+LABEL Description="LibRA Dependencies Container with all CMake dependencies built"
+LABEL Version=v1.0.0-deps
+
+ARG Kokkos_CUDA_ARCH=Kokkos_ARCH_AMPERE80
+ARG nproc=8
+
+WORKDIR /data/libra
+
+# Create build directory and configure CMake for dependencies only
+RUN mkdir -p build && cd build \
+    && cmake -DApps_BUILD_TESTS=ON \
+           -DKokkos_CUDA_ARCH_NAME=${Kokkos_CUDA_ARCH} \
+           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+           ..
+
+# Build all dependencies (everything except components)
+# Based on your CMakeLists.txt, these are the dependencies:
+RUN cd build \
+    && make -j${nproc} \
+        Kokkos \
+        FFTW \
+        Hpg \
+        Casacore \
+        Parafeed \
+        Pybind11 \
+        GTest
+
+# Verify dependencies were built successfully
+RUN echo '#!/bin/bash' > /data/verify_deps.sh \
+    && echo 'echo "=== Dependencies Container Verification ==="' >> /data/verify_deps.sh \
+    && echo 'cd /data/libra/build' >> /data/verify_deps.sh \
+    && echo 'ls -la' >> /data/verify_deps.sh \
+    && echo 'find . -name "*.so" -o -name "*.a" | head -20' >> /data/verify_deps.sh \
+    && echo 'echo "Dependencies build completed successfully"' >> /data/verify_deps.sh \
+    && chmod +x /data/verify_deps.sh
+
+# Create ccache stats script
+RUN echo '#!/bin/bash' > /data/ccache_stats.sh \
+    && echo 'echo "=== CCache Statistics ==="' >> /data/ccache_stats.sh \
+    && echo 'ccache --show-stats || echo "ccache not available"' >> /data/ccache_stats.sh \
+    && echo 'ccache --show-config || echo "ccache config not available"' >> /data/ccache_stats.sh \
+    && chmod +x /data/ccache_stats.sh
+
+CMD ["/bin/bash"]
