@@ -427,6 +427,7 @@ manual-spack:
   image: docker:latest
   services:
     - docker:dind
+  cache: []
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKERHUB_ORG: "ardgnrao"
@@ -437,6 +438,7 @@ manual-spack:
 
 container-base:
   extends: .container-common
+  needs: []
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
