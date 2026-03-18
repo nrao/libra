@@ -423,7 +423,7 @@ manual-spack:
 .container-common:
   stage: container
   tags:
-    - V-gxiUmx
+    - Docker
   image: docker:latest
   services:
     - docker:dind
