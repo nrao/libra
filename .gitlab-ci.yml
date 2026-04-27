@@ -415,9 +415,11 @@ manual-spack:
 
 # =============================================================================
 # Container Build Jobs
-# Run on dedicated Docker runner (tag: V-gxiUmx) using Docker-in-Docker.
-# Three layered jobs — each only fires when its inputs change.
+# Run on dedicated Docker-in-Docker runner (tag: Docker).
+# Staged: base (no arch) -> deps (arch matrix) -> components (arch matrix) -> tests (arch matrix)
+# Each stage only fires when its inputs change, or when FORCE_CONTAINER=true.
 # Requires GitLab CI variables: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+# Images are tagged by arch only — no :latest to avoid ambiguity.
 # =============================================================================
 
 .container-common:
@@ -436,6 +438,10 @@ manual-spack:
     - git submodule sync
     - git submodule update --init --recursive
 
+# base is per-arch because CUDA version compatibility is arch-dependent:
+#   volta70  -> cuda 12.9.1   (V100 max supported)
+#   ampere80 -> cuda 13.0.0
+#   hopper90 -> cuda 13.0.0
 container-base:
   extends: .container-common
   needs: []
@@ -454,16 +460,29 @@ container-base:
         - scripts/container_recipes/CI/readline.pc
     - if: '$FORCE_CONTAINER == "true"'
     - when: never
+  parallel:
+    matrix:
+      - CUDA_ARCH: VOLTA70
+        CUDA_VERSION: "12.9.1"
+      - CUDA_ARCH: AMPERE80
+        CUDA_VERSION: "13.0.0"
+      - CUDA_ARCH: HOPPER90
+        CUDA_VERSION: "13.0.0"
   script:
+    - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
       time docker build \
+        --build-arg CUDA_VERSION=${CUDA_VERSION} \
+        --build-arg LIBRA_BRANCH=${CI_COMMIT_BRANCH} \
+        --build-arg GITLAB_TOKEN=${GITLAB_TOKEN} \
         -f scripts/container_recipes/CI/Dockerfile.base \
-        -t ${DOCKERHUB_ORG}/libra-base:${CI_COMMIT_SHORT_SHA} \
-        -t ${DOCKERHUB_ORG}/libra-base:latest \
+        -t ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG} \
+        -t ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-base:${CI_COMMIT_SHORT_SHA}
-    - docker push ${DOCKERHUB_ORG}/libra-base:latest
+    - docker push ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}
+    - docker push ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 
+# deps is arch-specific — one job per arch via parallel matrix
 container-deps:
   extends: .container-common
   needs:
@@ -481,18 +500,24 @@ container-deps:
         - scripts/container_recipes/CI/Dockerfile.deps
     - if: '$FORCE_CONTAINER == "true"'
     - when: never
+  parallel:
+    matrix:
+      - CUDA_ARCH: [VOLTA70, AMPERE80, HOPPER90]
   script:
+    - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
       time docker build \
-        --build-arg Kokkos_CUDA_ARCH=Kokkos_ARCH_VOLTA70 \
+        --build-arg BASE_IMAGE=${DOCKERHUB_ORG}/libra-base:${ARCH_TAG} \
+        --build-arg CUDA_ARCH=${CUDA_ARCH} \
         --build-arg nproc=8 \
         -f scripts/container_recipes/CI/Dockerfile.deps \
-        -t ${DOCKERHUB_ORG}/libra-deps:${CI_COMMIT_SHORT_SHA} \
-        -t ${DOCKERHUB_ORG}/libra-deps:latest \
+        -t ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG} \
+        -t ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-deps:${CI_COMMIT_SHORT_SHA}
-    - docker push ${DOCKERHUB_ORG}/libra-deps:latest
+    - docker push ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}
+    - docker push ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 
+# components pulls the arch-matched deps image
 container-components:
   extends: .container-common
   needs:
@@ -522,14 +547,53 @@ container-components:
         - scripts/container_recipes/CI/Dockerfile.components
     - if: '$FORCE_CONTAINER == "true"'
     - when: never
+  parallel:
+    matrix:
+      - CUDA_ARCH: [VOLTA70, AMPERE80, HOPPER90]
   script:
+    - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
       time docker build \
         --build-arg nproc=8 \
+        --build-arg BASE_IMAGE=${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG} \
         -f scripts/container_recipes/CI/Dockerfile.components \
-        -t ${DOCKERHUB_ORG}/libra-components:${CI_COMMIT_SHORT_SHA} \
-        -t ${DOCKERHUB_ORG}/libra-components:latest \
+        -t ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG} \
+        -t ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-components:${CI_COMMIT_SHORT_SHA}
-    - docker push ${DOCKERHUB_ORG}/libra-components:latest
+    - docker push ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}
+    - docker push ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
+
+# tests pulls the arch-matched components image
+container-tests:
+  extends: .container-common
+  needs:
+    - job: container-components
+      optional: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.tests
+        - apps/src/tests/**/*
+        - libra-python/tests/**/*
+    - if: '$CI_COMMIT_BRANCH == "container-production"'
+      changes:
+        - scripts/container_recipes/CI/Dockerfile.tests
+        - apps/src/tests/**/*
+        - libra-python/tests/**/*
+    - if: '$FORCE_CONTAINER == "true"'
+    - when: never
+  parallel:
+    matrix:
+      - CUDA_ARCH: [VOLTA70, AMPERE80, HOPPER90]
+  script:
+    - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
+    - |
+      time docker build \
+        --build-arg BASE_IMAGE=${DOCKERHUB_ORG}/libra-components:${ARCH_TAG} \
+        -f scripts/container_recipes/CI/Dockerfile.tests \
+        -t ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG} \
+        -t ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
+        scripts/container_recipes/CI/
+    - docker push ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}
+    - docker push ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 
