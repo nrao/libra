@@ -21,7 +21,9 @@ RUN mkdir -p build && cd build \
 RUN cd build \
     && make -j${nproc} \
         Kokkos \
-        FFTW \
+        FFTW_source \
+        FFTW_double \
+        FFTW_float \
         Hpg \
         Casacore \
         Parafeed \

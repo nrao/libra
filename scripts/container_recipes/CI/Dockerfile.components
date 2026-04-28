@@ -18,7 +18,7 @@ RUN cd build \
         Scripts
 
 RUN cd build \
-    && exodus_enabled=$(cmake -L -N . 2>/dev/null | grep "LIBRA_USE_EXODUS:BOOL=ON") \
+    && exodus_enabled=$(cmake -L -N . 2>/dev/null | grep "LIBRA_USE_EXODUS:BOOL=ON" || true) \
     && if [ -n "$exodus_enabled" ]; then \
          make -j${nproc} exodus; \
        else \

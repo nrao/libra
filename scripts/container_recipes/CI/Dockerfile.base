@@ -14,7 +14,7 @@ RUN dnf -y clean all \
     && dnf -y install epel-release \
     && dnf install -y dnf-plugins-core \
     && dnf config-manager --set-enabled powertools \
-    && dnf -y install git cmake gcc-c++ gcc-gfortran flex bison tar curl bzip2 make \
+    && dnf -y install git cmake gcc-c++ gcc-gfortran flex bison tar curl bzip2 make which \
     && dnf -y install {readline,ncurses,blas,lapack,cfitsio,fftw,wcslib,gsl,eigen3,openmpi,python38}-devel \
     && dnf clean all
 
@@ -25,7 +25,7 @@ ENV LIBRA_PATH=/data/libra
 ARG LIBRA_BRANCH=main
 ARG GITLAB_TOKEN
 RUN git clone --recursive --branch ${LIBRA_BRANCH} --depth 1 \
-        https://gitlab-ci-token:${GITLAB_TOKEN}@gitlab.nrao.edu/pjaganna/libra.git \
+        https://oauth2:${GITLAB_TOKEN}@gitlab.nrao.edu/pjaganna/libra.git \
         /data/libra
 
 RUN nvcc --version \
