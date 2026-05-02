@@ -25,6 +25,4 @@ RUN cd build \
          echo "Exodus not enabled, skipping"; \
        fi
 
-RUN cd build && make install
-
 CMD ["/bin/bash"]
