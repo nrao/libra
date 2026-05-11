@@ -433,8 +433,12 @@ manual-spack:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKERHUB_ORG: "ardgnrao"
+    DOCKER_BUILDKIT: "1"
   before_script:
     - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN"
+    # buildx with docker-container driver is required for registry-mode cache export
+    - docker buildx create --use --name libra-builder --driver docker-container 2>/dev/null || docker buildx use libra-builder
+    - docker buildx inspect --bootstrap
     - git submodule sync
     - git submodule update --init --recursive
 
@@ -471,16 +475,17 @@ container-base:
   script:
     - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
-      time docker build \
+      time docker buildx build \
         --build-arg CUDA_VERSION=${CUDA_VERSION} \
         --build-arg LIBRA_BRANCH=${CI_COMMIT_BRANCH} \
         --build-arg GITLAB_TOKEN=${GITLAB_TOKEN} \
+        --cache-from type=registry,ref=${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}-buildcache \
+        --cache-to type=registry,ref=${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}-buildcache,mode=max \
         -f scripts/container_recipes/CI/Dockerfile.base \
         -t ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG} \
         -t ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
+        --push \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}
-    - docker push ${DOCKERHUB_ORG}/libra-base:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 
 # deps is arch-specific — one job per arch via parallel matrix
 container-deps:
@@ -506,16 +511,17 @@ container-deps:
   script:
     - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
-      time docker build \
+      time docker buildx build \
         --build-arg BASE_IMAGE=${DOCKERHUB_ORG}/libra-base:${ARCH_TAG} \
         --build-arg CUDA_ARCH=${CUDA_ARCH} \
         --build-arg nproc=8 \
+        --cache-from type=registry,ref=${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}-buildcache \
+        --cache-to type=registry,ref=${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}-buildcache,mode=max \
         -f scripts/container_recipes/CI/Dockerfile.deps \
         -t ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG} \
         -t ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
+        --push \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}
-    - docker push ${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 
 # components pulls the arch-matched deps image
 container-components:
@@ -553,15 +559,16 @@ container-components:
   script:
     - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
-      time docker build \
+      time docker buildx build \
         --build-arg nproc=8 \
         --build-arg BASE_IMAGE=${DOCKERHUB_ORG}/libra-deps:${ARCH_TAG} \
+        --cache-from type=registry,ref=${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}-buildcache \
+        --cache-to type=registry,ref=${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}-buildcache,mode=max \
         -f scripts/container_recipes/CI/Dockerfile.components \
         -t ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG} \
         -t ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
+        --push \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}
-    - docker push ${DOCKERHUB_ORG}/libra-components:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 
 # tests pulls the arch-matched components image
 container-tests:
@@ -588,12 +595,13 @@ container-tests:
   script:
     - ARCH_TAG=$(echo ${CUDA_ARCH} | tr '[:upper:]' '[:lower:]')
     - |
-      time docker build \
+      time docker buildx build \
         --build-arg BASE_IMAGE=${DOCKERHUB_ORG}/libra-components:${ARCH_TAG} \
+        --cache-from type=registry,ref=${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}-buildcache \
+        --cache-to type=registry,ref=${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}-buildcache,mode=max \
         -f scripts/container_recipes/CI/Dockerfile.tests \
         -t ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG} \
         -t ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA} \
+        --push \
         scripts/container_recipes/CI/
-    - docker push ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}
-    - docker push ${DOCKERHUB_ORG}/libra-tests:${ARCH_TAG}-${CI_COMMIT_SHORT_SHA}
 

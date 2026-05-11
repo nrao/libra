@@ -79,9 +79,22 @@ build_stage() {
   shift 3
   local extra_args=("$@")
 
+  # Registry-backed BuildKit cache, shared with the GitLab CI pipeline.
+  # Read unconditionally (anonymous pull is fine for public repos);
+  # write only when --push is set, since cache export needs credentials.
+  local cache_ref="${tag}-buildcache"
+  local cache_args=()
+  if [[ -z "${NO_CACHE}" ]]; then
+    cache_args+=(--cache-from "type=registry,ref=${cache_ref}")
+    if ${PUSH}; then
+      cache_args+=(--cache-to "type=registry,ref=${cache_ref},mode=max")
+    fi
+  fi
+
   log "=== Building stage: ${name} ==="
   podman build \
     ${NO_CACHE} \
+    "${cache_args[@]}" \
     -f "${RECIPE_DIR}/${dockerfile}" \
     -t "${tag}" \
     "${extra_args[@]}" \
