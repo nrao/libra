@@ -2,3 +2,8 @@
 /build/
 /install/
 src/synthesis/TransformMachines/test/tBeamCalc.cc.bak
+
+# Local-only build helpers and planning docs (not shipped with the GitHub demo repo)
+scripts/local_container_build.sh
+scripts/container_recipes/DEPLOYMENT.md
+PLAN.md

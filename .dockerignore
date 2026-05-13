@@ -1,0 +1,30 @@
+# Build context for Dockerfile.base `COPY . /data/libra`.
+# Keep source + submodules; exclude VCS metadata, build artifacts, large test outputs.
+
+.git
+.gitlab-ci.yml
+.github
+
+# Local build trees
+build/
+install/
+**/build/
+**/__pycache__/
+*.pyc
+
+# Test outputs and scratch
+test_reports/
+apps/src/tests/AppLevel*/
+apps/src/tests/casacore_*/
+apps/src/tests/state.txt
+Testing/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Plan and docs that don't belong in the image
+PLAN.md
+CLAUDE.md
+docs/

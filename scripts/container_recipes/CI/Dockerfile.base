@@ -7,7 +7,7 @@ LABEL Author=pjaganna@nrao.edu
 LABEL Version=v1.0.0-base
 LABEL Description="LibRA Base Container with CUDA 13.0 and system dependencies"
 
-COPY readline.pc /usr/lib64/pkgconfig/
+COPY scripts/container_recipes/CI/readline.pc /usr/lib64/pkgconfig/
 
 # Install system packages and development tools
 RUN dnf -y clean all \
@@ -22,11 +22,9 @@ ENV PATH=/data/libra/install/bin:$PATH
 ENV LD_LIBRARY_PATH=/data/libra/install/lib:/usr/local/cuda/compat:$LD_LIBRARY_PATH
 ENV LIBRA_PATH=/data/libra
 
-ARG LIBRA_BRANCH=main
-ARG GITLAB_TOKEN
-RUN git clone --recursive --branch ${LIBRA_BRANCH} --depth 1 \
-        https://oauth2:${GITLAB_TOKEN}@gitlab.nrao.edu/pjaganna/libra.git \
-        /data/libra
+# Source tree comes from the workflow's actions/checkout (with submodules)
+# via the build context — no in-build git clone, no token needed.
+COPY . /data/libra
 
 RUN nvcc --version \
     && nvidia-smi || echo "GPU not available during build"
