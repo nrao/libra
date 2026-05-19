@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+# Slim GitHub Actions self-hosted runner image — no CUDA.
+#
+# The runner container is a process manager: it checks out code and delegates
+# all build work to the DinD sidecar via DOCKER_HOST=tcp://localhost:2375.
+# GPU access lives with the DinD sidecar, not here. A plain Rocky Linux 8
+# base keeps this image small (~500 MB vs ~8 GB for the CUDA variant).
+#
+# Use this in values-arc.yaml instead of Dockerfile.gha-runner if the runner
+# itself does not need nvcc or CUDA libs directly.
+#
+# Built and pushed on the CI box:
+#   sudo docker build -f scripts/runner/Dockerfile.gha-runner-slim \
+#                     -t ardgnrao/gha-runner:slim \
+#                     scripts/runner/
+#   sudo docker push ardgnrao/gha-runner:slim
+#
+# Then update values-arc.yaml: image: ardgnrao/gha-runner:slim
+
+FROM docker.io/rockylinux:8
+
+ARG RUNNER_VERSION=2.334.0   # https://github.com/actions/runner/releases
+
+RUN dnf -y install epel-release && \
+    dnf -y install dnf-plugins-core && \
+    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && \
+    dnf -y install \
+        git jq curl tar gzip ca-certificates sudo \
+        docker-ce-cli libicu && \
+    dnf clean all
+
+RUN useradd -m -u 1001 runner && \
+    echo "runner ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# .NET 8 (used by the runner) requires libicu >= 62; Rocky Linux 8 ships 60.
+# Invariant mode disables culture-sensitive operations in .NET but the runner
+# does not use them -- it is safe for this workload.
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+
+USER runner
+WORKDIR /home/runner
+
+RUN curl -fsSL -o actions-runner.tar.gz \
+        "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" && \
+    tar xzf actions-runner.tar.gz && \
+    rm actions-runner.tar.gz
+
+CMD ["/bin/bash"]

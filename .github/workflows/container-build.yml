@@ -21,7 +21,7 @@ on:
 
 concurrency:
   group: container-build-${{ github.ref }}
-  cancel-in-progress: false  # don't cancel mid-stage; would leave half-built images
+  cancel-in-progress: true
 
 env:
   REGISTRY: docker.io
@@ -59,15 +59,13 @@ jobs:
       CUDA_VERSION: ${{ needs.set-cuda.outputs.cuda_version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Fetch gold_standard reference data
-        run: |
-          rm -rf apps/src/tests/gold_standard
-          git clone --depth 1 \
-            https://gitlab.nrao.edu/ardg/libra-data.git \
-            apps/src/tests/gold_standard
+        with:
+          submodules: recursive
 
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+          install: true
 
       - uses: docker/login-action@v3
         with:
@@ -94,6 +92,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+          install: true
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -121,6 +122,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+          install: true
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -147,6 +151,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+          install: true
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}

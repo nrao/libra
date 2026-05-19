@@ -1,0 +1,127 @@
+# Helm values for the ARC runner scale set.
+#
+# Chart:    actions-runner-controller-charts/gha-runner-scale-set
+# Repo:     https://github.com/actions/actions-runner-controller (scale-set flavor)
+# Install:
+#   helm upgrade --install libra-runners \
+#     oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+#     --namespace arc-runners --create-namespace \
+#     -f scripts/runner/values-arc.yaml
+#
+# Prerequisites:
+#   - Controller already installed (separate Helm release, see README.md).
+#   - GitHub App created on the `nrao` org with `Actions: Read & Write` and
+#     `Self-hosted runners: Read & Write` permissions, installed on `nrao/libra`.
+#     Credentials stored as a k8s secret (see githubConfigSecret below).
+#
+# What a "runner scale set" is:
+#   ARC's modern flavor. The controller watches a runner scale set CRD and
+#   creates ephemeral runner pods on demand: one fresh pod per workflow job,
+#   torn down when the job finishes. No long-lived runner process, no state
+#   bleed between jobs.
+
+# ----------------------------------------------------------------
+# GitHub side
+# ----------------------------------------------------------------
+
+# URL of the repo this scale set serves. Org-level URL would broaden it
+# across all repos in nrao; per-repo keeps the demo's blast radius small.
+githubConfigUrl: "https://github.com/nrao/libra"
+
+# Reference to a k8s secret holding the GitHub App credentials.
+# Create the secret before installing the scale set:
+#   kubectl -n arc-runners create secret generic libra-gh-app \
+#     --from-literal=github_app_id=<APP_ID> \
+#     --from-literal=github_app_installation_id=<INSTALLATION_ID> \
+#     --from-file=github_app_private_key=path/to/private-key.pem
+githubConfigSecret: libra-gh-app
+
+# ----------------------------------------------------------------
+# Scaling
+# ----------------------------------------------------------------
+
+# Single GPU on the CI box -> at most one runner pod at a time.
+# minRunners=0 means scale to zero when idle (no idle GPU reservation).
+minRunners: 0
+maxRunners: 1
+
+# This is the label workflows match via `runs-on:`. Must agree with
+# .github/workflows/container-build.yml.
+runnerScaleSetName: libra-dind
+
+# ----------------------------------------------------------------
+# Runner pod template
+# ----------------------------------------------------------------
+# Everything under `template:` is a literal pod spec that ARC clones for
+# each job. Two containers in the pod:
+#   - runner: the actions/runner binary, talks to the DinD sidecar
+#   - dind:   the docker daemon the build steps target
+# runtimeClassName is set at the pod level so containerd uses the nvidia OCI
+# hook. The hook reads NVIDIA_VISIBLE_DEVICES, which the device plugin sets
+# only on containers with a nvidia.com/gpu resource request -- so only dind
+# gets GPU devices injected. The slim runner container has no GPU request and
+# sees no devices.
+
+template:
+  spec:
+    runtimeClassName: nvidia
+
+    containers:
+      # ----- runner -----
+      - name: runner
+        image: ardgnrao/gha-runner:v3   # built from Dockerfile.gha-runner-slim
+        imagePullPolicy: Always
+        command: ["/home/runner/run.sh"]        # ARC's entrypoint script
+        env:
+          # Point all docker CLI calls at the sidecar daemon.
+          - name: DOCKER_HOST
+            value: tcp://localhost:2375
+        resources:
+          # Reservation is intentionally modest; the runner itself is light,
+          # the build work happens inside DinD.
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+            # GPU reservation on the *pod* (not the runner container) — see
+            # below. Listing nvidia.com/gpu here would double-allocate.
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+
+      # ----- DinD sidecar -----
+      - name: dind
+        image: docker:27-dind                    # TBC: pin to a current major
+        args:
+          - dockerd
+          - --host=tcp://0.0.0.0:2375
+          - --host=unix:///var/run/docker.sock
+          - --tls=false                          # in-pod traffic only
+          - --storage-driver=vfs                 # overlay-in-overlay not supported in k8s
+        securityContext:
+          privileged: true                       # required by DinD
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+            nvidia.com/gpu: "1"                  # GPU lives with the daemon
+          limits:
+            cpu: "16"
+            memory: "32Gi"
+            nvidia.com/gpu: "1"
+        volumeMounts:
+          - name: dind-storage
+            mountPath: /var/lib/docker
+          - name: work
+            mountPath: /home/runner/_work
+
+    volumes:
+      # Scratch for docker layers — emptyDir is fine for ephemeral runners.
+      # For persistent layer caching across runs you'd switch this to a PVC.
+      - name: dind-storage
+        emptyDir: {}
+      # Shared workspace so both containers see actions/checkout output.
+      - name: work
+        emptyDir: {}

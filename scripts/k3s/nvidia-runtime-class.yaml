@@ -1,0 +1,21 @@
+# RuntimeClass that selects the nvidia containerd runtime handler.
+#
+# Why this exists:
+#   k3s's containerd has TWO runtime handlers after setup-ci-box.sh runs:
+#     - runc    (default, for non-GPU pods)
+#     - nvidia  (registered by nvidia-ctk, wraps runc with the NVIDIA hook)
+#   A RuntimeClass is the k8s-level handle pods use to opt into a non-default
+#   handler. ARC runner pods set `runtimeClassName: nvidia` and so get GPU
+#   visibility; everything else stays on runc.
+#
+# Why not set nvidia as the default runtime instead:
+#   setup-ci-box.sh passes --set-as-default=false to nvidia-ctk so the host's
+#   non-GPU pods (kube-system, the device plugin itself, ARC controller, etc.)
+#   keep using runc. Less surface for surprises, and matches typical k8s
+#   deployments that mix GPU and non-GPU workloads.
+
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
