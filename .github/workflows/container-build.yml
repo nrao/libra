@@ -1,0 +1,170 @@
+name: LibRA Container Build
+
+# Staged container build mirroring the gitlab CI pipeline:
+#   base -> deps -> components -> tests
+# Each stage builds, pushes to Docker Hub, and gates the next.
+# Runs on a self-hosted runner with a privileged DinD sidecar; see
+# scripts/runner/ for the runner-side topology.
+
+on:
+  push:
+    branches:
+      - container-production
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Kokkos CUDA arch"
+        required: true
+        default: VOLTA70
+        type: choice
+        options: [VOLTA70, AMPERE80, HOPPER90]
+
+concurrency:
+  group: container-build-${{ github.ref }}
+  cancel-in-progress: false  # don't cancel mid-stage; would leave half-built images
+
+env:
+  REGISTRY: docker.io
+  IMAGE_PREFIX: ardgnrao/libra
+  ARCH: ${{ inputs.arch || 'VOLTA70' }}
+  # CUDA version map. VOLTA70 caps at 12.9.1; AMPERE80/HOPPER90 use 13.2.1 (CUDA 13.2 Update 1).
+  # Read by the 'set-cuda' step into a job output for downstream stages.
+
+jobs:
+  set-cuda:
+    runs-on: [self-hosted, linux, x64, libra-dind]
+    outputs:
+      arch_lower: ${{ steps.compute.outputs.arch_lower }}
+      cuda_version: ${{ steps.compute.outputs.cuda_version }}
+    steps:
+      - id: compute
+        run: |
+          arch="${ARCH}"
+          case "$arch" in
+            VOLTA70)              cuda="12.9.1" ;;
+            AMPERE80|AMPERE86)    cuda="13.2.1" ;;
+            HOPPER90)             cuda="13.2.1" ;;
+            *) echo "Unknown arch: $arch" >&2; exit 1 ;;
+          esac
+          arch_lower=$(echo "$arch" | tr '[:upper:]' '[:lower:]')
+          echo "arch_lower=$arch_lower" >> "$GITHUB_OUTPUT"
+          echo "cuda_version=$cuda"     >> "$GITHUB_OUTPUT"
+          echo "Building for arch=$arch (tag=$arch_lower), CUDA=$cuda"
+
+  base:
+    needs: set-cuda
+    runs-on: [self-hosted, linux, x64, libra-dind]
+    env:
+      ARCH_LOWER:   ${{ needs.set-cuda.outputs.arch_lower }}
+      CUDA_VERSION: ${{ needs.set-cuda.outputs.cuda_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch gold_standard reference data
+        run: |
+          rm -rf apps/src/tests/gold_standard
+          git clone --depth 1 \
+            https://gitlab.nrao.edu/ardg/libra-data.git \
+            apps/src/tests/gold_standard
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push libra-base
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: scripts/container_recipes/CI/Dockerfile.base
+          build-args: |
+            CUDA_VERSION=${{ env.CUDA_VERSION }}
+          tags: ${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}
+          push: true
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}-cache
+          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}-cache,mode=max
+
+  deps:
+    needs: [set-cuda, base]
+    runs-on: [self-hosted, linux, x64, libra-dind]
+    env:
+      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push libra-deps
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: scripts/container_recipes/CI/Dockerfile.deps
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}
+            CUDA_ARCH=${{ env.ARCH }}
+            nproc=8
+          tags: ${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}
+          push: true
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}-cache
+          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}-cache,mode=max
+
+  components:
+    needs: [set-cuda, deps]
+    runs-on: [self-hosted, linux, x64, libra-dind]
+    env:
+      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push libra-components
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: scripts/container_recipes/CI/Dockerfile.components
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}
+            nproc=8
+          tags: ${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
+          push: true
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}-cache
+          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}-cache,mode=max
+
+  tests:
+    needs: [set-cuda, components]
+    runs-on: [self-hosted, linux, x64, libra-dind]
+    env:
+      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push libra-tests
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: scripts/container_recipes/CI/Dockerfile.tests
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
+          tags: ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
+          push: true
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}-cache
+          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}-cache,mode=max
+
+      - name: Execute test suite
+        run: |
+          docker run --rm --gpus all \
+            ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
