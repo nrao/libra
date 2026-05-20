@@ -101,7 +101,6 @@ template:
           - --tls=false                          # in-pod traffic only
           - --storage-driver=vfs                 # overlay-in-overlay not supported in k8s
           - --add-runtime=nvidia=/usr/bin/nvidia-container-runtime
-          - --default-runtime=nvidia             # so --gpus all works without --runtime flag
         securityContext:
           privileged: true                       # required by DinD
         resources:
