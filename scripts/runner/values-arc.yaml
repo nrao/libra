@@ -118,10 +118,12 @@ template:
             mountPath: /home/runner/_work
 
     volumes:
-      # Scratch for docker layers — emptyDir is fine for ephemeral runners.
-      # For persistent layer caching across runs you'd switch this to a PVC.
+      # hostPath on the large data disk so vfs layer copies don't fill the OS SSD.
+      # The directory is created automatically by kubelet.
       - name: dind-storage
-        emptyDir: {}
+        hostPath:
+          path: /home/gpuhost003/dind-scratch
+          type: DirectoryOrCreate
       # Shared workspace so both containers see actions/checkout output.
       - name: work
         emptyDir: {}
