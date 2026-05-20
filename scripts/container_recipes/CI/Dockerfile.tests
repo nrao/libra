@@ -8,6 +8,10 @@ LABEL Description="LibRA Test Container"
 
 WORKDIR /data/libra
 
+RUN test -d apps/src/tests/gold_standard && [ "$(ls -A apps/src/tests/gold_standard)" ] \
+    || { echo "ERROR: gold_standard submodule is missing or empty -- was libra-data initialized?"; exit 1; }
+RUN ln -sf apps/src/tests/gold_standard gold_standard
+
 RUN python3 -m venv /data/test_venv \
     && source /data/test_venv/bin/activate \
     && pip install --upgrade pip setuptools wheel \
