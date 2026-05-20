@@ -81,8 +81,6 @@ jobs:
             CUDA_VERSION=${{ env.CUDA_VERSION }}
           tags: ${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}
           push: true
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}-cache
-          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}-cache,mode=max
 
   deps:
     needs: [set-cuda, base]
@@ -111,8 +109,6 @@ jobs:
             nproc=8
           tags: ${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}
           push: true
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}-cache
-          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}-cache,mode=max
 
   components:
     needs: [set-cuda, deps]
@@ -140,8 +136,6 @@ jobs:
             nproc=8
           tags: ${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
           push: true
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}-cache
-          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}-cache,mode=max
 
   tests:
     needs: [set-cuda, components]
@@ -168,8 +162,6 @@ jobs:
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
           tags: ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
           push: true
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}-cache
-          cache-to:   type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}-cache,mode=max
 
       - name: Execute test suite
         run: |
