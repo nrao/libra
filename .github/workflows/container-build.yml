@@ -5,6 +5,9 @@ name: LibRA Container Build
 # Each stage builds, pushes to Docker Hub, and gates the next.
 # Runs on a self-hosted runner with a privileged DinD sidecar; see
 # scripts/runner/ for the runner-side topology.
+#
+# Conditional build: if scripts/container_recipes/CI/** did not change,
+# the build stages are skipped and the existing image is pulled and run directly.
 
 on:
   push:
@@ -31,7 +34,25 @@ env:
   # Read by the 'set-cuda' step into a job output for downstream stages.
 
 jobs:
+  check-changes:
+    runs-on: libra-dind
+    outputs:
+      dockerfiles_changed: ${{ steps.filter.outputs.dockerfiles }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: filter
+        run: |
+          if ! git rev-parse HEAD~1 &>/dev/null || \
+             git diff --name-only HEAD~1 HEAD -- scripts/container_recipes/CI/ | grep -q .; then
+            echo "dockerfiles_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerfiles_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   set-cuda:
+    needs: check-changes
     runs-on: libra-dind
     outputs:
       arch_lower: ${{ steps.compute.outputs.arch_lower }}
@@ -52,7 +73,8 @@ jobs:
           echo "Building for arch=$arch (tag=$arch_lower), CUDA=$cuda"
 
   base:
-    needs: set-cuda
+    needs: [check-changes, set-cuda]
+    if: needs.check-changes.outputs.dockerfiles_changed == 'true'
     runs-on: libra-dind
     env:
       ARCH_LOWER:   ${{ needs.set-cuda.outputs.arch_lower }}
@@ -83,7 +105,8 @@ jobs:
           push: true
 
   deps:
-    needs: [set-cuda, base]
+    needs: [check-changes, set-cuda, base]
+    if: needs.check-changes.outputs.dockerfiles_changed == 'true'
     runs-on: libra-dind
     env:
       ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
@@ -111,7 +134,8 @@ jobs:
           push: true
 
   components:
-    needs: [set-cuda, deps]
+    needs: [check-changes, set-cuda, deps]
+    if: needs.check-changes.outputs.dockerfiles_changed == 'true'
     runs-on: libra-dind
     env:
       ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
@@ -138,7 +162,8 @@ jobs:
           push: true
 
   tests:
-    needs: [set-cuda, components]
+    needs: [check-changes, set-cuda, components]
+    if: needs.check-changes.outputs.dockerfiles_changed == 'true'
     runs-on: libra-dind
     env:
       ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
@@ -162,6 +187,26 @@ jobs:
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
           tags: ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
           push: true
+
+      - name: Execute test suite
+        run: |
+          docker run --rm --gpus all \
+            ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
+
+  run-tests:
+    needs: [check-changes, set-cuda]
+    if: needs.check-changes.outputs.dockerfiles_changed == 'false'
+    runs-on: libra-dind
+    env:
+      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull existing test image
+        run: docker pull ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
 
       - name: Execute test suite
         run: |
