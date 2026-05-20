@@ -248,5 +248,5 @@ jobs:
         run: docker pull ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
       - name: Execute test suite
         run: |
-          docker run --rm --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=all \
+          docker run --rm --privileged -e NVIDIA_VISIBLE_DEVICES=all \
             ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
