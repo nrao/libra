@@ -34,7 +34,7 @@ jobs:
   check-changes:
     runs-on:
       group: aws-arc
-      name: aws-arc-runner-dev
+      labels: aws-arc-runner-dev
     outputs:
       base_deps_changed: ${{ steps.filter.outputs.base_deps_changed }}
       any_changed: ${{ steps.filter.outputs.any_changed }}
@@ -79,7 +79,7 @@ jobs:
     if: needs.check-changes.outputs.base_deps_changed == 'true'
     runs-on:
       group: aws-arc
-      name: aws-arc-runner-dev
+      labels: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
         with:
@@ -110,7 +110,7 @@ jobs:
     if: needs.check-changes.outputs.base_deps_changed == 'true'
     runs-on:
       group: aws-arc
-      name: aws-arc-runner-dev
+      labels: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -145,7 +145,7 @@ jobs:
       (needs.deps.result == 'success' || needs.deps.result == 'skipped')
     runs-on:
       group: aws-arc
-      name: aws-arc-runner-dev
+      labels: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -180,7 +180,7 @@ jobs:
       needs.components.result == 'success'
     runs-on:
       group: aws-arc
-      name: aws-arc-runner-dev
+      labels: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -215,9 +215,9 @@ jobs:
       (needs.tests.result == 'success' || needs.tests.result == 'skipped')
     runs-on:
       group: aws-arc
-      name: aws-arc-runner-dev
+      labels: aws-arc-runner-dev
     container:
-      image: ${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}
+      image: ardgnrao/libra-tests:cpu
       credentials:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
