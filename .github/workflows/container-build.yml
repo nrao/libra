@@ -3,8 +3,11 @@ name: LibRA Container Build
 # Staged container build mirroring the gitlab CI pipeline:
 #   base -> deps -> components -> tests
 # Each stage builds, pushes to Docker Hub, and gates the next.
-# Runs on a self-hosted runner with a privileged DinD sidecar; see
-# scripts/runner/ for the runner-side topology.
+# CPU-only build (Kokkos OpenMP/Serial backend, LIBRA_ENABLE_CUDA_BACKEND=OFF).
+# Runs on the prod-managed aws-arc-runner-dev ARC pool (kubernetes mode, no
+# privileged DinD) -- image builds use buildx's kubernetes driver, and the
+# test job runs inside the tests image via a job-level container instead of
+# `docker run`.
 #
 # Three execution paths depending on what changed:
 #   1. Dockerfile.base or Dockerfile.deps changed -> full rebuild from base
@@ -16,13 +19,6 @@ on:
     branches:
       - container-production
   workflow_dispatch:
-    inputs:
-      arch:
-        description: "Kokkos CUDA arch"
-        required: true
-        default: VOLTA70
-        type: choice
-        options: [VOLTA70, AMPERE80, HOPPER90]
 
 concurrency:
   group: container-build-${{ github.ref }}
@@ -31,12 +27,14 @@ concurrency:
 env:
   REGISTRY: docker.io
   IMAGE_PREFIX: ardgnrao/libra
-  ARCH: ${{ inputs.arch || 'VOLTA70' }}
+  IMAGE_TAG: cpu
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   check-changes:
-    runs-on: libra-dind
+    runs-on:
+      group: aws-arc
+      name: aws-arc-runner-dev
     outputs:
       base_deps_changed: ${{ steps.filter.outputs.base_deps_changed }}
       any_changed: ${{ steps.filter.outputs.any_changed }}
@@ -72,45 +70,25 @@ jobs:
             echo "any_changed=false"       >> "$GITHUB_OUTPUT"
           fi
 
-  set-cuda:
-    needs: check-changes
-    runs-on: libra-dind
-    outputs:
-      arch_lower: ${{ steps.compute.outputs.arch_lower }}
-      cuda_version: ${{ steps.compute.outputs.cuda_version }}
-    steps:
-      - id: compute
-        run: |
-          arch="${ARCH}"
-          case "$arch" in
-            VOLTA70)              cuda="12.9.1" ;;
-            AMPERE80|AMPERE86)    cuda="13.2.1" ;;
-            HOPPER90)             cuda="13.2.1" ;;
-            *) echo "Unknown arch: $arch" >&2; exit 1 ;;
-          esac
-          arch_lower=$(echo "$arch" | tr '[:upper:]' '[:lower:]')
-          echo "arch_lower=$arch_lower" >> "$GITHUB_OUTPUT"
-          echo "cuda_version=$cuda"     >> "$GITHUB_OUTPUT"
-          echo "Building for arch=$arch (tag=$arch_lower), CUDA=$cuda"
-
   # ----------------------------------------------------------------
   # Path 1 only: rebuild base image
   # ----------------------------------------------------------------
 
   base:
-    needs: [check-changes, set-cuda]
+    needs: check-changes
     if: needs.check-changes.outputs.base_deps_changed == 'true'
-    runs-on: libra-dind
-    env:
-      ARCH_LOWER:   ${{ needs.set-cuda.outputs.arch_lower }}
-      CUDA_VERSION: ${{ needs.set-cuda.outputs.cuda_version }}
+    runs-on:
+      group: aws-arc
+      name: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: docker/setup-buildx-action@v4
         with:
-          driver: docker
+          driver: kubernetes
+          driver-opts: |
+            rootless=true
       - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -120,9 +98,7 @@ jobs:
         with:
           context: .
           file: scripts/container_recipes/CI/Dockerfile.base
-          build-args: |
-            CUDA_VERSION=${{ env.CUDA_VERSION }}
-          tags: ${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}
+          tags: ${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}
           push: true
 
   # ----------------------------------------------------------------
@@ -130,16 +106,18 @@ jobs:
   # ----------------------------------------------------------------
 
   deps:
-    needs: [check-changes, set-cuda, base]
+    needs: [check-changes, base]
     if: needs.check-changes.outputs.base_deps_changed == 'true'
-    runs-on: libra-dind
-    env:
-      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    runs-on:
+      group: aws-arc
+      name: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
         with:
-          driver: docker
+          driver: kubernetes
+          driver-opts: |
+            rootless=true
       - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -150,10 +128,9 @@ jobs:
           context: .
           file: scripts/container_recipes/CI/Dockerfile.deps
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ env.ARCH_LOWER }}
-            CUDA_ARCH=${{ env.ARCH }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}
             nproc=8
-          tags: ${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}
+          tags: ${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}
           push: true
 
   # ----------------------------------------------------------------
@@ -161,20 +138,21 @@ jobs:
   # ----------------------------------------------------------------
 
   components:
-    needs: [check-changes, set-cuda, deps]
+    needs: [check-changes, deps]
     if: |
       always() &&
-      needs.set-cuda.result == 'success' &&
       needs.check-changes.outputs.any_changed == 'true' &&
       (needs.deps.result == 'success' || needs.deps.result == 'skipped')
-    runs-on: libra-dind
-    env:
-      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    runs-on:
+      group: aws-arc
+      name: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
         with:
-          driver: docker
+          driver: kubernetes
+          driver-opts: |
+            rootless=true
       - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -185,9 +163,9 @@ jobs:
           context: .
           file: scripts/container_recipes/CI/Dockerfile.components
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-deps:${{ env.ARCH_LOWER }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}
             nproc=8
-          tags: ${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
+          tags: ${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}
           push: true
 
   # ----------------------------------------------------------------
@@ -195,20 +173,21 @@ jobs:
   # ----------------------------------------------------------------
 
   tests:
-    needs: [check-changes, set-cuda, components]
+    needs: [check-changes, components]
     if: |
       always() &&
-      needs.set-cuda.result == 'success' &&
       needs.check-changes.outputs.any_changed == 'true' &&
       needs.components.result == 'success'
-    runs-on: libra-dind
-    env:
-      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    runs-on:
+      group: aws-arc
+      name: aws-arc-runner-dev
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
         with:
-          driver: docker
+          driver: kubernetes
+          driver-opts: |
+            rootless=true
       - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -219,31 +198,29 @@ jobs:
           context: .
           file: scripts/container_recipes/CI/Dockerfile.tests
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-components:${{ env.ARCH_LOWER }}
-          tags: ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}
+          tags: ${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}
           push: true
 
   # ----------------------------------------------------------------
-  # All paths: pull whatever tests image is current and run the suite
+  # All paths: run the test suite inside the current tests image.
+  # No docker daemon needed -- the job itself runs as that image's
+  # container on the runner pod.
   # ----------------------------------------------------------------
 
   run-tests:
-    needs: [set-cuda, tests]
+    needs: [check-changes, tests]
     if: |
       always() &&
-      needs.set-cuda.result == 'success' &&
       (needs.tests.result == 'success' || needs.tests.result == 'skipped')
-    runs-on: libra-dind
-    env:
-      ARCH_LOWER: ${{ needs.set-cuda.outputs.arch_lower }}
+    runs-on:
+      group: aws-arc
+      name: aws-arc-runner-dev
+    container:
+      image: ${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
-      - uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Pull libra-tests
-        run: docker pull ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
       - name: Execute test suite
-        run: |
-          docker run --rm --privileged -e NVIDIA_VISIBLE_DEVICES=all \
-            ${{ env.IMAGE_PREFIX }}-tests:${{ env.ARCH_LOWER }}
+        run: /data/run_tests.sh
