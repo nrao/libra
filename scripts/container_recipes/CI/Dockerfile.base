@@ -1,11 +1,10 @@
 # syntax=docker/dockerfile:1
-# Base container — CUDA version is arch-dependent, passed as build arg.
-ARG CUDA_VERSION=13.0.0
-FROM docker.io/nvidia/cuda:${CUDA_VERSION}-devel-rockylinux8 as base
+# Base container — CPU-only build (no CUDA).
+FROM docker.io/rockylinux:8 as base
 
 LABEL Author=pjaganna@nrao.edu
 LABEL Version=v1.0.0-base
-LABEL Description="LibRA Base Container with CUDA 13.0 and system dependencies"
+LABEL Description="LibRA Base Container (CPU-only) with system dependencies"
 
 COPY scripts/container_recipes/CI/readline.pc /usr/lib64/pkgconfig/
 
@@ -19,14 +18,11 @@ RUN dnf -y clean all \
     && dnf clean all
 
 ENV PATH=/data/libra/install/bin:$PATH
-ENV LD_LIBRARY_PATH=/data/libra/install/lib:/usr/local/cuda/compat:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/data/libra/install/lib:$LD_LIBRARY_PATH
 ENV LIBRA_PATH=/data/libra
 
 # Source tree comes from the workflow's actions/checkout (with submodules)
 # via the build context — no in-build git clone, no token needed.
 COPY . /data/libra
-
-RUN nvcc --version \
-    && nvidia-smi || echo "GPU not available during build"
 
 CMD ["/bin/bash"]

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Components container — builds LibRA apps, casacpp, frameworks.
-# Tagged per CUDA arch: ardgnrao/libra-components:volta70, :ampere80, :hopper90
-ARG BASE_IMAGE=ardgnrao/libra-deps:volta70
+# CPU-only build.
+ARG BASE_IMAGE=ardgnrao/libra-deps:cpu
 FROM ${BASE_IMAGE} as components
 
 LABEL Description="LibRA Components Container"

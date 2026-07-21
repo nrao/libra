@@ -1,13 +1,11 @@
 # syntax=docker/dockerfile:1
 # Dependencies container — builds all LibRA external dependencies.
-# Tagged per CUDA arch: ardgnrao/libra-deps:volta70, :ampere80, :hopper90
-ARG BASE_IMAGE=ardgnrao/libra-base:volta70
+# CPU-only build: Kokkos runs on OpenMP/Serial, no CUDA backend.
+ARG BASE_IMAGE=ardgnrao/libra-base:cpu
 FROM ${BASE_IMAGE} as dependencies
 
-LABEL Description="LibRA Dependencies Container"
+LABEL Description="LibRA Dependencies Container (CPU-only)"
 
-# ARCH values: VOLTA70, AMPERE80, AMPERE86, HOPPER90
-ARG CUDA_ARCH=VOLTA70
 ARG nproc=8
 
 WORKDIR /data/libra
@@ -15,7 +13,7 @@ WORKDIR /data/libra
 RUN mkdir -p build && cd build \
     && cmake \
          -DApps_BUILD_TESTS=ON \
-         -DKokkos_CUDA_ARCH_NAME=${CUDA_ARCH} \
+         -DLIBRA_ENABLE_CUDA_BACKEND=OFF \
          ..
 
 RUN cd build \

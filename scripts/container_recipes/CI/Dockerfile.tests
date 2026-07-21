@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Test container — runs C++ GTests and Python pytest.
-# Tagged per CUDA arch: ardgnrao/libra-tests:volta70, :ampere80, :hopper90
-ARG BASE_IMAGE=ardgnrao/libra-components:volta70
+# CPU-only build.
+ARG BASE_IMAGE=ardgnrao/libra-components:cpu
 FROM ${BASE_IMAGE} as tests
 
 LABEL Description="LibRA Test Container"
