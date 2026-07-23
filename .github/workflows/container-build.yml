@@ -32,9 +32,7 @@ env:
 
 jobs:
   check-changes:
-    runs-on:
-      group: aws-arc
-      labels: aws-arc-runner-dev
+    runs-on: aws-arc-runner-dev
     outputs:
       base_deps_changed: ${{ steps.filter.outputs.base_deps_changed }}
       any_changed: ${{ steps.filter.outputs.any_changed }}
