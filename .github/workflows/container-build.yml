@@ -19,6 +19,11 @@ on:
     branches:
       - container-production
   workflow_dispatch:
+    inputs:
+      force_build:
+        description: "Force a full base -> deps -> components -> tests rebuild, ignoring the diff check"
+        type: boolean
+        default: false
 
 concurrency:
   group: container-build-${{ github.ref }}
@@ -43,14 +48,22 @@ jobs:
         run: apk add --no-cache git
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - id: filter
         run: |
+          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+            echo "force_build requested -- forcing full rebuild"
+            echo "base_deps_changed=true" >> "$GITHUB_OUTPUT"
+            echo "any_changed=true"       >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           before="${{ github.event.before }}"
           # On workflow_dispatch or first push, before is all zeros -- fall back to HEAD~1.
           # If HEAD~1 also doesn't exist (first commit ever), default to full build.
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
             if ! git rev-parse HEAD~1 &>/dev/null; then
+              echo "no prior commit -- forcing full rebuild"
               echo "base_deps_changed=true" >> "$GITHUB_OUTPUT"
               echo "any_changed=true"       >> "$GITHUB_OUTPUT"
               exit 0
@@ -61,6 +74,9 @@ jobs:
             scripts/container_recipes/CI/Dockerfile.base \
             scripts/container_recipes/CI/Dockerfile.deps | grep -c . || true)
           any=$(git diff --name-only "$before" HEAD | grep -c . || true)
+          echo "before=$before"
+          echo "base_deps_changed_count=${base_deps:-0}"
+          echo "any_changed_count=${any:-0}"
           if [ "${base_deps:-0}" -gt 0 ]; then
             echo "base_deps_changed=true" >> "$GITHUB_OUTPUT"
             echo "any_changed=true"       >> "$GITHUB_OUTPUT"
