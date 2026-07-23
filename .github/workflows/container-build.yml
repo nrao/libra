@@ -33,10 +33,14 @@ env:
 jobs:
   check-changes:
     runs-on: aws-arc-runner-dev
+    container:
+      image: docker:cli
     outputs:
       base_deps_changed: ${{ steps.filter.outputs.base_deps_changed }}
       any_changed: ${{ steps.filter.outputs.any_changed }}
     steps:
+      - name: Install git
+        run: apk add --no-cache git
       - uses: actions/checkout@v5
         with:
           fetch-depth: 2
@@ -78,7 +82,11 @@ jobs:
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
+    container:
+      image: docker:cli
     steps:
+      - name: Install git
+        run: apk add --no-cache git
       - uses: actions/checkout@v5
         with:
           submodules: recursive
@@ -109,6 +117,8 @@ jobs:
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
+    container:
+      image: docker:cli
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -144,6 +154,8 @@ jobs:
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
+    container:
+      image: docker:cli
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -179,6 +191,8 @@ jobs:
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
+    container:
+      image: docker:cli
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
