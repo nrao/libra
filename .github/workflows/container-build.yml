@@ -133,7 +133,7 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}-buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}-buildcache,mode=max
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}-buildcache,mode=min
 
   # ----------------------------------------------------------------
   # Path 1 only: rebuild deps image
@@ -165,11 +165,11 @@ jobs:
           file: scripts/container_recipes/CI/Dockerfile.deps
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}
-            nproc=8
+            nproc=2
           tags: ${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}-buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}-buildcache,mode=max
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}-buildcache,mode=min
 
   # ----------------------------------------------------------------
   # Paths 1 + 2: rebuild components from deps (freshly built or pulled)
@@ -204,11 +204,11 @@ jobs:
           file: scripts/container_recipes/CI/Dockerfile.components
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}
-            nproc=8
+            nproc=2
           tags: ${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}-buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}-buildcache,mode=max
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}-buildcache,mode=min
 
   # ----------------------------------------------------------------
   # Paths 1 + 2: rebuild tests image from components
@@ -246,7 +246,7 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}-buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}-buildcache,mode=max
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}-buildcache,mode=min
 
   # ----------------------------------------------------------------
   # All paths: run the test suite inside the current tests image.
