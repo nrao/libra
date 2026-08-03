@@ -45,7 +45,7 @@ jobs:
       any_changed: ${{ steps.filter.outputs.any_changed }}
     steps:
       - name: Install git
-        run: apk add --no-cache git
+        run: apk add --no-cache git findutils
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -112,7 +112,7 @@ jobs:
       image: docker:cli
     steps:
       - name: Install git
-        run: apk add --no-cache git
+        run: apk add --no-cache git findutils
       - uses: actions/checkout@v5
         with:
           submodules: recursive
