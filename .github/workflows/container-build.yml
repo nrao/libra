@@ -34,6 +34,12 @@ env:
   IMAGE_PREFIX: ardgnrao/libra
   IMAGE_TAG: cpu
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # docker/build-push-action's post-job step generates a build summary by
+  # reconnecting to the buildx builder after all explicit steps (including
+  # our cleanup step) have run. With the kubernetes driver that reconnection
+  # reprovisions a builder pod, which looks like -- and costs as much as --
+  # another build. Disable it.
+  DOCKER_BUILD_SUMMARY: false
 
 jobs:
   check-changes:
@@ -134,6 +140,18 @@ jobs:
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}-buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-base:${{ env.IMAGE_TAG }}-buildcache,mode=min
+      - name: Post-job Buildx and Docker Purge
+        if: always()
+        run: |
+          echo "=== Stopping and removing Buildx instances ==="
+          docker buildx stop || true
+          docker buildx rm --all-inactive --force || true
+
+          echo "=== Pruning dangling build cache ==="
+          docker builder prune -f --filter "until=24h" || true
+
+          echo "=== Pruning stopped containers ==="
+          docker container prune -f || true
 
   # ----------------------------------------------------------------
   # Path 1 only: rebuild deps image
@@ -170,6 +188,18 @@ jobs:
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}-buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-deps:${{ env.IMAGE_TAG }}-buildcache,mode=min
+      - name: Post-job Buildx and Docker Purge
+        if: always()
+        run: |
+          echo "=== Stopping and removing Buildx instances ==="
+          docker buildx stop || true
+          docker buildx rm --all-inactive --force || true
+
+          echo "=== Pruning dangling build cache ==="
+          docker builder prune -f --filter "until=24h" || true
+
+          echo "=== Pruning stopped containers ==="
+          docker container prune -f || true
 
   # ----------------------------------------------------------------
   # Paths 1 + 2: rebuild components from deps (freshly built or pulled)
@@ -209,6 +239,18 @@ jobs:
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}-buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-components:${{ env.IMAGE_TAG }}-buildcache,mode=min
+      - name: Post-job Buildx and Docker Purge
+        if: always()
+        run: |
+          echo "=== Stopping and removing Buildx instances ==="
+          docker buildx stop || true
+          docker buildx rm --all-inactive --force || true
+
+          echo "=== Pruning dangling build cache ==="
+          docker builder prune -f --filter "until=24h" || true
+
+          echo "=== Pruning stopped containers ==="
+          docker container prune -f || true
 
   # ----------------------------------------------------------------
   # Paths 1 + 2: rebuild tests image from components
@@ -247,6 +289,18 @@ jobs:
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}-buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-tests:${{ env.IMAGE_TAG }}-buildcache,mode=min
+      - name: Post-job Buildx and Docker Purge
+        if: always()
+        run: |
+          echo "=== Stopping and removing Buildx instances ==="
+          docker buildx stop || true
+          docker buildx rm --all-inactive --force || true
+
+          echo "=== Pruning dangling build cache ==="
+          docker builder prune -f --filter "until=24h" || true
+
+          echo "=== Pruning stopped containers ==="
+          docker container prune -f || true
 
   # ----------------------------------------------------------------
   # All paths: run the test suite inside the current tests image.
