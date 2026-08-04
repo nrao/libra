@@ -15,13 +15,19 @@ using namespace casacore;
 namespace test{
   const path goldDir = current_path() / "gold_standard";
 
+  // The test binary always lives at <install_prefix>/bin/tests/LibRATests,
+  // so resolving install/bin from the running executable's own location is
+  // independent of whatever directory ctest happened to be launched from
+  // (this differs between the GitHub Actions and containerized CI flows).
+  const path installBinDir = std::filesystem::read_symlink("/proc/self/exe").parent_path().parent_path();
+
 // Function to run the shell script
 std::string run_shell_script() {
     // Ensure that the script is executable
     system("chmod +x ./libra_htclean.sh");
     system("chmod +x ./runapp.sh");
 
-    std::string command = "./libra_htclean.sh -n 3 -p libra_htclean.def -L ../../../../install/bin/ -l LOGS";
+    std::string command = "./libra_htclean.sh -n 3 -p libra_htclean.def -L " + installBinDir.string() + "/ -l LOGS";
     char buffer[128];
     std::string result = "";
     FILE* fp = popen(command.c_str(), "r");
