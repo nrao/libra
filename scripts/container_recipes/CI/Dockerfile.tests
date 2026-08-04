@@ -32,6 +32,10 @@ source /data/test_venv/bin/activate
 cd /data/libra
 mkdir -p test_reports
 
+# CPU-only CI container: force the OpenMP Kokkos backend so LibHPG
+# doesn't default to CUDA (libra_cuda) and abort at init.
+export HPGDEVICE=libra_omp
+
 echo "=== C++ Tests ==="
 if [ -x "install/bin/tests/LibRATests" ]; then
     install/bin/tests/LibRATests --gtest_output=xml:test_reports/cpp_report.xml
