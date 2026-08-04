@@ -62,6 +62,7 @@ jobs:
             exit 0
           fi
 
+          git config --global --add safe.directory "$PWD"
           git init -q .
           # Same token actions/checkout uses under the hood -- no extra
           # permissions needed, it's auto-issued per-run for this repo.
