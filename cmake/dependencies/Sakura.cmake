@@ -23,6 +23,7 @@ function(check_and_add_sakura)
             Sakura
             GIT_REPOSITORY ${LIBRA_SAKURA_GIT_REPOSITORY}
             GIT_TAG        ${LIBRA_SAKURA_GIT_TAG}
+            UPDATE_DISCONNECTED TRUE
             SOURCE_DIR     ${CMAKE_SOURCE_DIR}/dependencies/sakura
             BINARY_DIR     ${BUILD_DIR}/sakura
             SOURCE_SUBDIR  libsakura
