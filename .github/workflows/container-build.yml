@@ -52,9 +52,7 @@ jobs:
     steps:
       - name: Install git
         run: apk add --no-cache git findutils
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+      # Checkout and diff computation stay in one step -- see commit message.
       - id: filter
         run: |
           if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
@@ -64,32 +62,40 @@ jobs:
             exit 0
           fi
 
+          git init -q .
+          # Same token actions/checkout uses under the hood -- no extra
+          # permissions needed, it's auto-issued per-run for this repo.
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"
+          git -c protocol.version=2 fetch -q --no-tags --no-recurse-submodules \
+            origin "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+
+          head="${{ github.sha }}"
           before="${{ github.event.before }}"
 
           # before can be present (including the all-zeros SHA on workflow_dispatch/first
           # push, which cat-file will reject same as anything else invalid) but missing
-          # from this pod's .git (persistent/reused runner workspace with a stale or
-          # interrupted fetch). Try to pull just that commit before giving up on it.
+          # locally if it's not an ancestor of the current branch tip (e.g. force-push,
+          # rebase). Try to pull just that commit before giving up on it.
           if [ -n "$before" ] && ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
             echo "before=$before not present locally -- fetching it explicitly"
-            git fetch --no-tags origin "$before" 2>/dev/null || true
+            git fetch -q --no-tags origin "$before" 2>/dev/null || true
           fi
 
           # If before is still unreachable after the explicit fetch above, fall back to
-          # HEAD~1. If HEAD~1 also doesn't exist/isn't reachable, default to full build.
+          # head~1. If head~1 also doesn't exist/isn't reachable, default to full build.
           if [ -z "$before" ] || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
-            if ! git cat-file -e "HEAD~1^{commit}" 2>/dev/null; then
+            if ! git cat-file -e "${head}~1^{commit}" 2>/dev/null; then
               echo "no prior commit reachable -- forcing full rebuild"
               echo "base_deps_changed=true" >> "$GITHUB_OUTPUT"
               echo "any_changed=true"       >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            before="HEAD~1"
+            before="${head}~1"
           fi
-          base_deps=$(git diff --name-only "$before" HEAD -- \
+          base_deps=$(git diff --name-only "$before" "$head" -- \
             scripts/container_recipes/CI/Dockerfile.base \
             scripts/container_recipes/CI/Dockerfile.deps | grep -c . || true)
-          any=$(git diff --name-only "$before" HEAD | grep -c . || true)
+          any=$(git diff --name-only "$before" "$head" | grep -c . || true)
           echo "before=$before"
           echo "base_deps_changed_count=${base_deps:-0}"
           echo "any_changed_count=${any:-0}"
