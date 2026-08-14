@@ -1,38 +1,59 @@
-import unittest
+import pytest
 import os
 import shutil
 import numpy as np
-from pathlib import Path
 import sys
+from pathlib import Path
 
-# Add the libra package to the path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure we import the installed package, not source
+libra_source_paths = [
+    str(Path(__file__).parent.parent),  # libra-python directory
+    str(Path(__file__).parent.parent.parent)  # main libra directory
+]
 
+for path in libra_source_paths:
+    if path in sys.path:
+        sys.path.remove(path)
+
+# Import from installed package
 import libra
+from libra import asp2py, utilities2py
 
-# Get the functions from the dynamically imported modules
-Asp2py = libra.asp2py.Asp2py
-getchunk = libra.utilities2py.getchunk
-ImageType = libra.utilities2py.ImageType
+# Get the functions from the modules
+Asp2py = asp2py.asp  # Use clean API function name
+getchunk = utilities2py.getchunk
+ImageType = utilities2py.ImageType
 
 
-class TestAsp(unittest.TestCase):
-    def setUp(self):
-        self.test_name = 'casacore_asp_mfs'
-        self.test_dir = Path.cwd() / self.test_name
-        self.test_dir.mkdir(parents=True, exist_ok=True) 
+@pytest.fixture
+def asp_test_setup(gold_standard_dir):
+    """Setup fixture for ASP tests."""
+    if gold_standard_dir is None:
+        pytest.skip("Gold standard test data not found")
         
-        # Copy files
-        self.goldDir = Path.cwd() / "gold_standard/"
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE.psf', self.test_dir / 'unittest_hummbee_mfs_revE.psf')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE.mask', self.test_dir / 'unittest_hummbee_mfs_revE.mask')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE.residual', self.test_dir / 'unittest_hummbee_mfs_revE.residual')
-        
-         # Change current working directory to the test directory
-        os.chdir(self.test_dir)
+    test_name = 'casacore_asp_mfs'
+    test_dir = Path.cwd() / test_name
+    test_dir.mkdir(parents=True, exist_ok=True) 
+    
+    # Copy files
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE.psf', test_dir / 'unittest_hummbee_mfs_revE.psf')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE.mask', test_dir / 'unittest_hummbee_mfs_revE.mask')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE.residual', test_dir / 'unittest_hummbee_mfs_revE.residual')
+    
+    # Change current working directory to the test directory
+    original_cwd = Path.cwd()
+    os.chdir(test_dir)
+    
+    yield {'test_dir': test_dir, 'gold_dir': gold_standard_dir}
+    
+    # Cleanup: Move to the parent directory and clean up
+    os.chdir(original_cwd)
+    shutil.rmtree(test_dir)
+
+class TestAsp:
         
 
-    def test_asp_func_level(self):
+    def test_asp_func_level(self, asp_test_setup):
         specmode = "cube"
         largestscale = -1
         fusedthreshold = 0
@@ -76,15 +97,15 @@ class TestAsp(unittest.TestCase):
             specmode
             )
 
-        self.assertEqual(psfb[1, 0], 5.0)
-        self.assertEqual(residualb[0, 3], -20.0)
+        assert psfb[1, 0] == 5.0
+        assert residualb[0, 3] == -20.0
 
-    def test_getchunk(self):
+    def test_getchunk(self, asp_test_setup):
         r1_result = getchunk("unittest_hummbee_mfs_revE", ImageType.RESIDUAL)
-        self.assertAlmostEqual(r1_result[1072,1639,0,0], 12.110947, delta=0.01)
+        assert abs(r1_result[1072,1639,0,0] - 12.110947) < 0.01
 
 
-    def test_asp2py_mfs(self):
+    def test_asp2py_mfs(self, asp_test_setup):
         specmode = "mfs"
         largestscale = -1
         fusedthreshold = 0.007
@@ -122,16 +143,13 @@ class TestAsp(unittest.TestCase):
 
         tol = 0.1
         res_gold_val_loc = 9.44497
-        self.assertAlmostEqual(residual[1072, 1639, 0, 0], res_gold_val_loc, delta=tol)
+        assert abs(residual[1072, 1639, 0, 0] - res_gold_val_loc) < tol
 
 
-    def tearDown(self):
-        # Move to the parent directory and clean up
-        os.chdir(os.path.dirname(self.test_dir))
-        shutil.rmtree(self.test_dir)
+    # teardown_method removed - handled by fixture
     
 
         
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])

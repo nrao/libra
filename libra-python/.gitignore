@@ -1,0 +1,11 @@
+# Wheel build artifacts (scikit-build-core nested superbuild + bundled wheel)
+build/
+dist/
+wheelhouse/
+*.whl
+*.egg-info/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

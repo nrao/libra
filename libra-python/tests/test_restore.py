@@ -1,42 +1,64 @@
-import unittest
+import pytest
 import os
 import shutil
 import numpy as np
-from pathlib import Path
 import sys
+from pathlib import Path
 
-# Add the libra package to the path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure we import the installed package, not source
+libra_source_paths = [
+    str(Path(__file__).parent.parent),  # libra-python directory
+    str(Path(__file__).parent.parent.parent)  # main libra directory
+]
 
+for path in libra_source_paths:
+    if path in sys.path:
+        sys.path.remove(path)
+
+# Import from installed package
 import libra
+from libra import restore2py, utilities2py
 
-# Get the functions from the dynamically imported modules
-Restore2py = libra.restore2py.Restore2py
-getchunk = libra.utilities2py.getchunk
-ImageType = libra.utilities2py.ImageType
+# Get the functions from the modules
+Restore2py = restore2py.restore  # Use clean API function name
+getchunk = utilities2py.getchunk
+ImageType = utilities2py.ImageType
 
 
-class TestRestore(unittest.TestCase):
-    def setUp(self):
-        self.test_name = 'restore2py_testdir'
-        self.test_dir = Path.cwd() / self.test_name
-        self.test_dir.mkdir(parents=True, exist_ok=True) 
+@pytest.fixture
+def restore_test_setup(gold_standard_dir):
+    """Setup fixture for Restore tests."""
+    if gold_standard_dir is None:
+        pytest.skip("Gold standard test data not found")
         
-        # Copy files 
-        self.goldDir = Path.cwd() / "gold_standard/"
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore.psf', self.test_dir / 'unittest_hummbee_mfs_revE_restore.psf')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore.residual', self.test_dir / 'unittest_hummbee_mfs_revE_restore.residual')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore.sumwt', self.test_dir / 'unittest_hummbee_mfs_revE_restore.sumwt')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore.weight', self.test_dir / 'unittest_hummbee_mfs_revE_restore.weight')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore.model', self.test_dir / 'unittest_hummbee_mfs_revE_restore.model')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore_gold.image', self.test_dir / 'unittest_hummbee_mfs_revE_restore_gold.image')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore.pb', self.test_dir / 'unittest_hummbee_mfs_revE_restore.pb')
-        shutil.copytree(self.goldDir /'unittest_hummbee_mfs_revE_restore_gold.image.pbcor', self.test_dir / 'unittest_hummbee_mfs_revE_restore_gold.image.pbcor')
-         # Change current working directory to the test directory
-        os.chdir(self.test_dir)
+    test_name = 'restore2py_testdir'
+    test_dir = Path.cwd() / test_name
+    test_dir.mkdir(parents=True, exist_ok=True) 
+    
+    # Copy files
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore.psf', test_dir / 'unittest_hummbee_mfs_revE_restore.psf')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore.residual', test_dir / 'unittest_hummbee_mfs_revE_restore.residual')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore.sumwt', test_dir / 'unittest_hummbee_mfs_revE_restore.sumwt')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore.weight', test_dir / 'unittest_hummbee_mfs_revE_restore.weight')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore.model', test_dir / 'unittest_hummbee_mfs_revE_restore.model')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore_gold.image', test_dir / 'unittest_hummbee_mfs_revE_restore_gold.image')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore.pb', test_dir / 'unittest_hummbee_mfs_revE_restore.pb')
+    shutil.copytree(gold_standard_dir / 'unittest_hummbee_mfs_revE_restore_gold.image.pbcor', test_dir / 'unittest_hummbee_mfs_revE_restore_gold.image.pbcor')
+    
+    # Change current working directory to the test directory
+    original_cwd = Path.cwd()
+    os.chdir(test_dir)
+    
+    yield {'test_dir': test_dir, 'gold_dir': gold_standard_dir}
+    
+    # Cleanup
+    os.chdir(original_cwd)
+    shutil.rmtree(test_dir)
+
+class TestRestore:
 
 
-    def test_restore2py_func_level(self):
+    def test_restore2py_func_level(self, restore_test_setup):
         nx = 2
         ny = 5
 
@@ -91,7 +113,7 @@ class TestRestore(unittest.TestCase):
         assert np.isclose(image[0][2], gold_val_loc2, atol=tol), f"Value at image[0][1] is {image[0][1]}, expected {gold_val_loc2}"
 
 
-    def test_restore2py_mfs_pbcor(self):        
+    def test_restore2py_mfs_pbcor(self, restore_test_setup):        
         nx = 4000
         ny = 4000
         refi = 2000
@@ -132,22 +154,19 @@ class TestRestore(unittest.TestCase):
         tol = 0.01
         im_gold_val_loc1 = 0.2126
         im_gold_val_loc2 = 0.07974
-        self.assertAlmostEqual(im_gold_val_loc1, image[1072][1639], delta=tol);
-        self.assertAlmostEqual(im_gold_val_loc2, image[3072][2406], delta=tol);
+        assert abs(image[1072][1639] - im_gold_val_loc1) < tol
+        assert abs(image[3072][2406] - im_gold_val_loc2) < tol
         
         impbcor_gold_val_loc1 = 0.580613
         impbcor_gold_val_loc2 = 0.30845
-        self.assertAlmostEqual(impbcor_gold_val_loc1, image_pbcor[1072][1639], delta=tol);
-        self.assertAlmostEqual(impbcor_gold_val_loc2, image_pbcor[3072][2406], delta=tol);
+        assert abs(image_pbcor[1072][1639] - impbcor_gold_val_loc1) < tol
+        assert abs(image_pbcor[3072][2406] - impbcor_gold_val_loc2) < tol
         
          
-    def tearDown(self):
-        # Move to the parent directory and clean up
-        os.chdir(os.path.dirname(self.test_dir))
-        shutil.rmtree(self.test_dir)
+    # teardown_method removed - handled by fixture
     
 
         
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])

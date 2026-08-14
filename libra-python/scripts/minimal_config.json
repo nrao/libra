@@ -1,0 +1,9 @@
+{
+    "imagename": "test_image",
+    "vis": "/tmp/test.ms",
+    "cfcache": "/tmp/libra.cf",
+    "imsize": [512, 512],
+    "cell": [2.0, 2.0],
+    "phasecenter": "J2000 12h30m00.0s -30d00m00.0s",
+    "reffreq": "1.4GHz"
+}

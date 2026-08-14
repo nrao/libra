@@ -24,6 +24,10 @@ on:
         description: "Force a full base -> deps -> components -> tests rebuild, ignoring the diff check"
         type: boolean
         default: false
+      build_wheel:
+        description: "Build the CPU-only libra-python wheel and upload it as an artifact"
+        type: boolean
+        default: false
 
 concurrency:
   group: container-build-${{ github.ref }}
@@ -331,3 +335,40 @@ jobs:
     steps:
       - name: Execute test suite
         run: /data/run_tests.sh
+
+  # ----------------------------------------------------------------
+  # Manual/flag-gated only: build the CPU-only libra-python wheel.
+  # Never runs on a plain push -- only workflow_dispatch with
+  # build_wheel=true, after run-tests has passed.
+  # ----------------------------------------------------------------
+
+  build-wheel:
+    needs: [run-tests]
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.build_wheel == 'true' &&
+      needs.run-tests.result == 'success'
+    runs-on:
+      group: aws-arc
+      labels: aws-arc-runner-dev
+    container:
+      image: ardgnrao/libra-deps:cpu
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Build CPU wheel
+        working-directory: libra-python
+        run: |
+          python3 -m venv /tmp/wheel_venv
+          source /tmp/wheel_venv/bin/activate
+          pip install --upgrade pip scikit-build-core pybind11 numpy build patchelf
+          export LIBRA_ENABLE_CUDA=OFF
+          pip wheel . --no-deps --wheel-dir dist
+      - uses: actions/upload-artifact@v5
+        with:
+          name: libra-python-wheel-cpu
+          path: libra-python/dist/*.whl

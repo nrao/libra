@@ -1,13 +1,22 @@
-import unittest
+import pytest
 import os
 import shutil
-from pathlib import Path
 import sys
+from pathlib import Path
 
-# Add the libra package to the path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure we import the installed package, not source
+libra_source_paths = [
+    str(Path(__file__).parent.parent),  # libra-python directory
+    str(Path(__file__).parent.parent.parent)  # main libra directory
+]
 
+for path in libra_source_paths:
+    if path in sys.path:
+        sys.path.remove(path)
+
+# Import from installed package
 import libra
+from libra import hummbee2py
 from libra.helper_functions import compare_images_with_tolerance
 
 # Get the functions from the dynamically imported modules
@@ -20,72 +29,85 @@ tol = 0.1
 goldPeakRes = 4.98845
 
 # Test class for testing PeakRes calculations
-class TestHummbee(unittest.TestCase):
-
-    def setUp(self):
-        # Get the test name
-        self.testName = "runPythonTests"
+@pytest.fixture
+def hummbee_test_setup(gold_standard_dir):
+    """Setup fixture for Hummbee tests."""
+    if gold_standard_dir is None:
+        pytest.skip("Gold standard test data not found")
         
-        # Create a unique directory for this test case
-        self.testDir = Path.cwd() / self.testName
-        self.testDir.mkdir(parents=True, exist_ok=True)
+    # Get the test name
+    test_name = "runPythonTests"
+    
+    # Create a unique directory for this test case
+    test_dir = Path.cwd() / test_name
+    test_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Copy files to the test directory
+    shutil.copytree(gold_standard_dir / "unittest_hummbee.pb", test_dir / "unittest_hummbee.pb")
+    shutil.copytree(gold_standard_dir / "unittest_hummbee.psf", test_dir / "unittest_hummbee.psf")
+    shutil.copytree(gold_standard_dir / "unittest_hummbee.residual", test_dir / "unittest_hummbee.residual")
+    shutil.copytree(gold_standard_dir / "unittest_hummbee.sumwt", test_dir / "unittest_hummbee.sumwt")
+    
+    # Set the current working directory to the test directory
+    original_cwd = Path.cwd()
+    os.chdir(test_dir)
+    
+    # Define parameters
+    image_name = "unittest_hummbee"
+    model_image_name = "unittest_hummbee.image"
+    deconvolver = "asp"
+    specmode = "cube"
+    scales = []
+    largestscale = -1
+    fusedthreshold = 0
+    nterms = 1
+    gain = 0.1
+    threshold = 1e-4
+    nsigma = 1.5
+    cycleniter = 10
+    cyclefactor = 1.0
+    mask = ["circle[[256pix,290pix],140pix]"]
+    doPBCorr = False
+    imagingMode = "deconvolve"
+    
+    # Call the function equivalent to Hummbee in Python
+    peak_res = Hummbee(image_name, model_image_name,
+                      deconvolver,
+                      scales,
+                      largestscale, fusedthreshold,
+                      nterms,
+                      gain, threshold,
+                      nsigma,
+                      cycleniter, cyclefactor,
+                      mask, specmode,
+                      doPBCorr,
+                      imagingMode)
+    
+    yield {
+        'test_dir': test_dir,
+        'gold_dir': gold_standard_dir,
+        'peak_res': peak_res
+    }
+    
+    # Cleanup
+    os.chdir(original_cwd)
+    shutil.rmtree(test_dir)
 
-        self.goldDir = Path.cwd() / "gold_standard/"
-        # Copy files to the test directory
-        shutil.copytree(self.goldDir / "unittest_hummbee.pb", self.testDir / "unittest_hummbee.pb")
-        shutil.copytree(self.goldDir / "unittest_hummbee.psf", self.testDir / "unittest_hummbee.psf")
-        shutil.copytree(self.goldDir / "unittest_hummbee.residual", self.testDir / "unittest_hummbee.residual")
-        shutil.copytree(self.goldDir / "unittest_hummbee.sumwt", self.testDir / "unittest_hummbee.sumwt")
+class TestHummbee:
 
-        # Set the current working directory to the test directory
-        os.chdir(self.testDir)
+    def test_peak_res(self, hummbee_test_setup):
+        peak_res = hummbee_test_setup['peak_res']
+        assert abs(peak_res - goldPeakRes) < tol
 
-        # Define parameters
-        self.imageName = "unittest_hummbee"
-        self.modelImageName = "unittest_hummbee.image"
-        self.deconvolver = "asp"
-        self.specmode = "cube"
-        self.scales = []
-        self.largestscale = -1
-        self.fusedthreshold = 0
-        self.nterms = 1
-        self.gain = 0.1
-        self.threshold = 1e-4
-        self.nsigma = 1.5
-        self.cycleniter = 10
-        self.cyclefactor = 1.0
-        self.mask = ["circle[[256pix,290pix],140pix]"]
-        self.doPBCorr = False
-        self.imagingMode = "deconvolve"
-
-        # Call the function equivalent to Hummbee in Python
-        self.PeakRes = Hummbee(self.imageName, self.modelImageName,
-                                          self.deconvolver,
-                                          self.scales,
-                                          self.largestscale, self.fusedthreshold,
-                                          self.nterms,
-                                          self.gain, self.threshold,
-                                          self.nsigma,
-                                          self.cycleniter, self.cyclefactor,
-                                          self.mask, self.specmode,
-                                          self.doPBCorr,
-                                          self.imagingMode)
-
-
-    def test_peak_res(self):
-        self.assertAlmostEqual(self.PeakRes, goldPeakRes, delta=tol)
-
-
-    def test_residual_value(self):
+    def test_residual_value(self, hummbee_test_setup):
         # comparing two files is not a stable test. Commented.
-        #self.assertTrue(compare_images_with_tolerance(self.goldDir/"unittest_hummbee_gold2.residual", "unittest_hummbee.residual", tol2))
+        #assert compare_images_with_tolerance(hummbee_test_setup['gold_dir']/"unittest_hummbee_gold2.residual", "unittest_hummbee.residual", tol2)
         r1_result = getchunk("unittest_hummbee", ImageType.RESIDUAL)
-        #rgold_result = getchunk(str(self.goldDir/"unittest_hummbee_gold2"), ImageType.RESIDUAL)
         rgold_result = 0.34095
-        self.assertAlmostEqual(r1_result[255,287,0,0], rgold_result, delta=0.01)
+        assert abs(r1_result[255, 287, 0, 0] - rgold_result) < 0.01
 
-    # can't do the following because hummbee2py internally 
-    # has interaction with casa that conflict when both 
+    # can't do the following because hummbee2py internally
+    # has interaction with casa that conflict when both
     # are loaded simultaneously.
     '''def test_residual_value(self):
         ia = image()
@@ -96,14 +118,6 @@ class TestHummbee(unittest.TestCase):
         ia.close()'''
 
 
-    def tearDown(self):
-        # Set the current working directory back to the parent dir
-        os.chdir(self.testDir.parent)
-
-        # Remove the test directory
-        shutil.rmtree(self.testDir)
-
-
 # Main entry point to run the tests
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])

@@ -1,0 +1,147 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.8.0",
+    "pybind11>=2.10.0",
+    "numpy>=1.20.0",
+    "build>=0.10.0",
+    "patchelf",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "libra"
+description = "LibRA - High-Performance Radio Astronomy Toolkit"
+readme = "README.md"
+license = {text = "GPL-2.0"}
+authors = [
+    {name = "NRAO ARDG", email = "libra@nrao.edu"},
+]
+keywords = ["radio astronomy", "imaging", "deconvolution", "cuda", "hpc"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+    "nvidia-cuda-runtime-cu12>=12.0",
+]
+version = "0.1.0"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0.0",
+    "pytest-xdist",
+]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-xdist",
+    "black",
+    "isort",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/ARDG-NRAO/LibRA"
+Documentation = "https://libra.readthedocs.io"
+Repository = "https://github.com/ARDG-NRAO/LibRA"
+"Bug Tracker" = "https://github.com/ARDG-NRAO/LibRA/issues"
+
+[project.scripts]
+libra-roadrunner = "libra.cli:roadrunner_main"
+libra-hummbee = "libra.cli:hummbee_main"
+libra-asp = "libra.cli:asp_main"
+libra-dale = "libra.cli:dale_main"
+libra-restore = "libra.cli:restore_main"
+libra-coyote = "libra.cli:coyote_main"
+libra-mssplit = "libra.cli:mssplit_main"
+libra-subms = "libra.cli:subms_main"
+libra-tableinfo = "libra.cli:tableinfo_main"
+libra-acme = "libra.cli:acme_main"
+
+[tool.scikit-build]
+# Minimum CMake version
+cmake.version = ">=3.18"
+# Build directory
+build-dir = "build/{wheel_tag}"
+# Source directory (where CMakeLists.txt is)
+cmake.source-dir = "."
+# Build type
+cmake.build-type = "Release"
+# Verbose build output
+build.verbose = true
+# Install directory - scikit-build will handle this
+install.strip = false
+
+# CMake configuration arguments
+cmake.args = [
+    "-DCMAKE_CXX_STANDARD=17",
+    "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+    "-DApps_BUILD_TESTS=ON",
+]
+
+# Specify which files to include in the wheel
+wheel.install-dir = "libra"
+wheel.packages = ["src/libra"]
+
+# Native libraries and executables (_libs/_bin/_include/_data) are installed
+# into the wheel by libra-python/CMakeLists.txt via install(CODE ...); scikit-build-core
+# bundles whatever lands under the install prefix automatically.
+
+# Build settings
+ninja.make-fallback = false
+
+# Wheel settings
+wheel.py-api = "cp313"
+wheel.expand-macos-universal-tags = false
+
+[tool.scikit-build.cmake.define]
+# Pass Python information to CMake
+Python_EXECUTABLE = {env="PYTHON_EXECUTABLE", default="{python}"}
+PYBIND11_PYTHON_VERSION = "{python_version}"
+
+# Build configuration
+CMAKE_BUILD_TYPE = "Release"
+BUILD_SHARED_LIBS = "ON"
+
+# GPU support - these can be overridden by environment variables
+Kokkos_ENABLE_CUDA = {env="LIBRA_ENABLE_CUDA", default="ON"}
+# Leave CUDA arch empty to enable auto-detection, or set via LIBRA_CUDA_ARCH env var
+Kokkos_CUDA_ARCH_NAME = {env="LIBRA_CUDA_ARCH", default=""}
+
+# License files will be handled automatically
+
+# Development tools configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require GPU support",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
