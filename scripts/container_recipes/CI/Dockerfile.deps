@@ -2,7 +2,7 @@
 # Dependencies container — builds all LibRA external dependencies.
 # CPU-only build: Kokkos runs on OpenMP/Serial, no CUDA backend.
 ARG BASE_IMAGE=ardgnrao/libra-base:cpu
-FROM ${BASE_IMAGE} as dependencies
+FROM ${BASE_IMAGE} AS dependencies
 
 LABEL Description="LibRA Dependencies Container (CPU-only)"
 

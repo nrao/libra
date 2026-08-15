@@ -2,7 +2,7 @@
 # Test container — runs C++ GTests and Python pytest.
 # CPU-only build.
 ARG BASE_IMAGE=ardgnrao/libra-components:cpu
-FROM ${BASE_IMAGE} as tests
+FROM ${BASE_IMAGE} AS tests
 
 LABEL Description="LibRA Test Container"
 

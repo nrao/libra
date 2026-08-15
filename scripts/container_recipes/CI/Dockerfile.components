@@ -2,7 +2,7 @@
 # Components container — builds LibRA apps, casacpp, frameworks.
 # CPU-only build.
 ARG BASE_IMAGE=ardgnrao/libra-deps:cpu
-FROM ${BASE_IMAGE} as components
+FROM ${BASE_IMAGE} AS components
 
 LABEL Description="LibRA Components Container"
 

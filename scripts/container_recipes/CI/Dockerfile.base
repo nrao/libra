@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Base container — CPU-only build (no CUDA).
-FROM docker.io/rockylinux:8 as base
+FROM docker.io/rockylinux:8 AS base
 
 LABEL Author=pjaganna@nrao.edu
 LABEL Version=v1.0.0-base
