@@ -57,12 +57,26 @@ jobs:
     outputs:
       base_deps_changed: ${{ steps.filter.outputs.base_deps_changed }}
       any_changed: ${{ steps.filter.outputs.any_changed }}
+      skip_chain: ${{ steps.filter.outputs.skip_chain }}
     steps:
       - name: Install git
         run: apk add --no-cache git findutils
       # Checkout and diff computation stay in one step -- see commit message.
       - id: filter
         run: |
+          # A workflow_dispatch that asks only for build_wheel/build_deploy
+          # (no force_build) skips the diff-based base->deps->components->
+          # tests->run-tests chain entirely -- those flags are for a fast,
+          # standalone wheel/deploy build, not a full pipeline run.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ github.event.inputs.force_build }}" != "true" ] && \
+             { [ "${{ github.event.inputs.build_wheel }}" = "true" ] || [ "${{ github.event.inputs.build_deploy }}" = "true" ]; }; then
+            echo "build_wheel/build_deploy requested without force_build -- skipping diff-based chain"
+            echo "skip_chain=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_chain=false" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
             echo "force_build requested -- forcing full rebuild"
             echo "base_deps_changed=true" >> "$GITHUB_OUTPUT"
@@ -125,7 +139,9 @@ jobs:
 
   base:
     needs: check-changes
-    if: needs.check-changes.outputs.base_deps_changed == 'true'
+    if: |
+      needs.check-changes.outputs.base_deps_changed == 'true' &&
+      needs.check-changes.outputs.skip_chain != 'true'
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
@@ -174,7 +190,9 @@ jobs:
 
   deps:
     needs: [check-changes, base]
-    if: needs.check-changes.outputs.base_deps_changed == 'true'
+    if: |
+      needs.check-changes.outputs.base_deps_changed == 'true' &&
+      needs.check-changes.outputs.skip_chain != 'true'
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
@@ -225,6 +243,7 @@ jobs:
     if: |
       always() &&
       needs.check-changes.outputs.any_changed == 'true' &&
+      needs.check-changes.outputs.skip_chain != 'true' &&
       (needs.deps.result == 'success' || needs.deps.result == 'skipped')
     runs-on:
       group: aws-arc
@@ -276,6 +295,7 @@ jobs:
     if: |
       always() &&
       needs.check-changes.outputs.any_changed == 'true' &&
+      needs.check-changes.outputs.skip_chain != 'true' &&
       needs.components.result == 'success'
     runs-on:
       group: aws-arc
@@ -327,6 +347,7 @@ jobs:
     needs: [check-changes, tests]
     if: |
       always() &&
+      needs.check-changes.outputs.skip_chain != 'true' &&
       (needs.tests.result == 'success' || needs.tests.result == 'skipped')
     runs-on:
       group: aws-arc
@@ -343,15 +364,18 @@ jobs:
   # ----------------------------------------------------------------
   # Manual/flag-gated only: build the CPU-only libra-python wheel.
   # Never runs on a plain push -- only workflow_dispatch with
-  # build_wheel=true, after run-tests has passed.
+  # build_wheel=true. Requires run-tests to have passed when the diff
+  # chain actually ran (force_build); skipped when build_wheel/build_deploy
+  # were requested standalone, so this doesn't wait on it in that case.
   # ----------------------------------------------------------------
 
   build-wheel:
-    needs: [run-tests]
+    needs: [check-changes, run-tests]
     if: |
+      always() &&
       github.event_name == 'workflow_dispatch' &&
       (github.event.inputs.build_wheel == 'true' || github.event.inputs.build_deploy == 'true') &&
-      needs.run-tests.result == 'success'
+      (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped')
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
