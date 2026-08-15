@@ -34,10 +34,10 @@ USER ${NB_UID}
 # Built by the build-wheel CI job (container-build.yml), CPU-only
 # (LIBRA_ENABLE_CUDA=OFF). Passed in as a build context file, not fetched --
 # the deploy job downloads the build-wheel artifact first.
-COPY --chown=${NB_UID}:${NB_GID} libra-0.1.0-cp312-cp312-linux_x86_64.whl /tmp/
-RUN pip install --no-deps /tmp/libra-0.1.0-cp312-cp312-linux_x86_64.whl \
+COPY --chown=${NB_UID}:${NB_GID} libra-0.1.0-cp38-cp38-linux_x86_64.whl /tmp/
+RUN pip install --no-deps /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl \
     && pip install numpy \
-    && rm /tmp/libra-0.1.0-cp312-cp312-linux_x86_64.whl
+    && rm /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl
 
 # --- Sample dataset ---
 # EVLA SNR G55.10s calibrated MS -- small enough to bundle in-image, CPU-imageable
