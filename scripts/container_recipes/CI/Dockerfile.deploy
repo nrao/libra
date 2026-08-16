@@ -56,7 +56,7 @@ COPY --chown=${NB_UID}:${NB_GID} libra-0.1.0-cp38-cp38-linux_x86_64.whl /tmp/
 RUN python3.8 -m venv /home/${NB_USER}/.libra_venv \
     && /home/${NB_USER}/.libra_venv/bin/pip install --upgrade pip \
     && /home/${NB_USER}/.libra_venv/bin/pip install --no-deps /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl \
-    && /home/${NB_USER}/.libra_venv/bin/pip install numpy ipykernel \
+    && /home/${NB_USER}/.libra_venv/bin/pip install numpy matplotlib ipykernel \
     && /home/${NB_USER}/.libra_venv/bin/python -m ipykernel install --user \
        --name libra-cp38 --display-name "LibRA (Python 3.8)" \
     && rm /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl
