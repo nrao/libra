@@ -28,15 +28,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# --- Python 3.8 interpreter for the LibRA wheel ---
+# TEMPORARY: build-wheel (container-build.yml) compiles the pybind11
+# extension inside ardgnrao/libra-deps:cpu (Rocky 8), whose only stock
+# Python is 3.8 -- hence the cp38 wheel tag. Ubuntu noble (this image's
+# base) dropped python3.8 from its own repos, so it's pulled from the
+# deadsnakes PPA instead. This is a stopgap: the real fix is building the
+# wheel against a current Python in libra-deps so this whole interpreter
+# stays unnecessary -- tracked as follow-up work, not a permanent fixture.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.8 python3.8-venv python3.8-distutils \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 USER ${NB_UID}
 
 # --- LibRA wheel ---
 # Built by the build-wheel CI job (container-build.yml), CPU-only
 # (LIBRA_ENABLE_CUDA=OFF). Passed in as a build context file, not fetched --
-# the deploy job downloads the build-wheel artifact first.
+# the deploy job downloads the build-wheel artifact first. Installed into
+# its own cp38 venv (see Python 3.8 step above) and registered as a
+# separate Jupyter kernel -- it can't share the notebook's default
+# (newer) Python environment.
 COPY --chown=${NB_UID}:${NB_GID} libra-0.1.0-cp38-cp38-linux_x86_64.whl /tmp/
-RUN pip install --no-deps /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl \
-    && pip install numpy \
+RUN python3.8 -m venv /home/${NB_USER}/.libra_venv \
+    && /home/${NB_USER}/.libra_venv/bin/pip install --upgrade pip \
+    && /home/${NB_USER}/.libra_venv/bin/pip install --no-deps /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl \
+    && /home/${NB_USER}/.libra_venv/bin/pip install numpy ipykernel \
+    && /home/${NB_USER}/.libra_venv/bin/python -m ipykernel install --user \
+       --name libra-cp38 --display-name "LibRA (Python 3.8)" \
     && rm /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl
 
 # --- Sample dataset ---
