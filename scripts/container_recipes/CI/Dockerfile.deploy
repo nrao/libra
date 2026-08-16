@@ -23,7 +23,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libblas3 liblapack3 libgfortran5 libgsl27 \
     libreadline8 libtinfo6 \
-    libcfitsio10 libwcs7 \
+    libcfitsio10t64 libwcs8 \
     libcurl4 zlib1g libbz2-1.0 \
     wget \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

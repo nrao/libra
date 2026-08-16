@@ -17,7 +17,9 @@ RUN python3 -m venv /data/test_venv \
     && pip install --upgrade pip setuptools wheel \
     && pip install pytest numpy
 
+ARG PYTHONPATH=""
 ENV PYTHONPATH="/data/libra/install/lib:/data/libra/libra-python:${PYTHONPATH}"
+ARG LD_LIBRARY_PATH=""
 ENV LD_LIBRARY_PATH="/data/libra/install/lib:${LD_LIBRARY_PATH}"
 
 RUN cd /data/libra/libra-python \
