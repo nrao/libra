@@ -74,8 +74,10 @@ jobs:
           # standalone wheel/deploy build, not a full pipeline run.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
              [ "${{ github.event.inputs.force_build }}" != "true" ] && \
-             { [ "${{ github.event.inputs.build_wheel }}" = "true" ] || [ "${{ github.event.inputs.build_deploy }}" = "true" ]; }; then
-            echo "build_wheel/build_deploy requested without force_build -- skipping diff-based chain"
+             { [ "${{ github.event.inputs.build_wheel }}" = "true" ] || \
+               [ "${{ github.event.inputs.build_deploy }}" = "true" ] || \
+               [ "${{ github.event.inputs.use_last_wheel }}" = "true" ]; }; then
+            echo "build_wheel/build_deploy/use_last_wheel requested without force_build -- skipping diff-based chain"
             echo "skip_chain=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip_chain=false" >> "$GITHUB_OUTPUT"
@@ -434,7 +436,7 @@ jobs:
     if: |
       always() &&
       github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.build_deploy == 'true' &&
+      (github.event.inputs.build_deploy == 'true' || github.event.inputs.use_last_wheel == 'true') &&
       (needs.build-wheel.result == 'success' || needs.build-wheel.result == 'skipped')
     runs-on:
       group: aws-arc
