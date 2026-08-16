@@ -410,6 +410,7 @@ jobs:
   build-deploy:
     needs: [build-wheel]
     if: |
+      always() &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.build_deploy == 'true' &&
       needs.build-wheel.result == 'success'
