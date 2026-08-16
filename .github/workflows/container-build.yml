@@ -32,6 +32,10 @@ on:
         description: "Build the deployment (JupyterHub + wheel + sample data) container -- implies build_wheel"
         type: boolean
         default: false
+      use_last_wheel:
+        description: "Reuse the most recently uploaded libra-python-wheel-cpu artifact instead of rebuilding the wheel (build-deploy only)"
+        type: boolean
+        default: false
 
 concurrency:
   group: container-build-${{ github.ref }}
@@ -375,6 +379,7 @@ jobs:
       always() &&
       github.event_name == 'workflow_dispatch' &&
       (github.event.inputs.build_wheel == 'true' || github.event.inputs.build_deploy == 'true') &&
+      github.event.inputs.use_last_wheel != 'true' &&
       (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped')
     runs-on:
       group: aws-arc
@@ -396,6 +401,23 @@ jobs:
           pip install --upgrade pip scikit-build-core pybind11 numpy build patchelf
           export LIBRA_ENABLE_CUDA=OFF
           pip wheel . --no-deps --wheel-dir dist
+      # Only one libra-python-wheel-cpu artifact should exist at a time --
+      # delete any prior ones before uploading so use_last_wheel always
+      # resolves unambiguously to the single most recent build.
+      - name: Delete prior wheel artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ids=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=libra-python-wheel-cpu&per_page=100" \
+            | python3 -c "import json,sys; print('\n'.join(str(a['id']) for a in json.load(sys.stdin)['artifacts']))")
+          for id in $ids; do
+            echo "Deleting prior wheel artifact $id"
+            curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id"
+          done
       - uses: actions/upload-artifact@v5
         with:
           name: libra-python-wheel-cpu
@@ -413,18 +435,36 @@ jobs:
       always() &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.build_deploy == 'true' &&
-      needs.build-wheel.result == 'success'
+      (needs.build-wheel.result == 'success' || needs.build-wheel.result == 'skipped')
     runs-on:
       group: aws-arc
       labels: aws-arc-runner-dev
     container:
       image: docker:cli
     steps:
+      - name: Install curl and python3
+        run: apk add --no-cache curl python3
       - uses: actions/checkout@v5
+      - name: Find latest wheel artifact
+        id: find-wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=libra-python-wheel-cpu&per_page=1" \
+            | python3 -c "import json,sys; a=json.load(sys.stdin)['artifacts']; print(a[0]['id'] if a else '')")
+          if [ -z "$id" ]; then
+            echo "No libra-python-wheel-cpu artifact found -- run build_wheel first" >&2
+            exit 1
+          fi
+          echo "artifact_id=$id" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v6
         with:
-          name: libra-python-wheel-cpu
+          artifact-ids: ${{ steps.find-wheel.outputs.artifact_id }}
           path: scripts/container_recipes/CI
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
       - uses: docker/setup-buildx-action@v4
         with:
           driver: kubernetes
