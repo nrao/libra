@@ -45,6 +45,10 @@ env:
   REGISTRY: docker.io
   IMAGE_PREFIX: ardgnrao/libra
   IMAGE_TAG: cpu
+  # Sonatype/Nexus mirror for the deploy image only (build-deploy job) --
+  # Docker Hub stays the primary/backup push target for every image.
+  SONATYPE_REGISTRY: nrao.repo.sonatype.app
+  SONATYPE_IMAGE_PREFIX: cicdpilot/releng/libra
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # docker/build-push-action's post-job step generates a build summary by
   # reconnecting to the buildx builder after all explicit steps (including
@@ -477,12 +481,19 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.SONATYPE_REGISTRY }}
+          username: ${{ secrets.SONATYPE_USERNAME }}
+          password: ${{ secrets.SONATYPE_TOKEN }}
       - name: Build & push libra-deploy
         uses: docker/build-push-action@v6
         with:
           context: scripts/container_recipes/CI
           file: scripts/container_recipes/CI/Dockerfile.deploy
-          tags: ${{ env.IMAGE_PREFIX }}-deploy:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-deploy:${{ env.IMAGE_TAG }}
+            ${{ env.SONATYPE_REGISTRY }}/${{ env.SONATYPE_IMAGE_PREFIX }}:${{ env.IMAGE_TAG }}
           push: true
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-deploy:${{ env.IMAGE_TAG }}-buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-deploy:${{ env.IMAGE_TAG }}-buildcache,mode=min
