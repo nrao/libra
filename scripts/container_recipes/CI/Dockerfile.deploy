@@ -19,7 +19,7 @@ ARG NB_UID=1000
 ARG NB_GID=100
 ENV NB_USER=${NB_USER}
 
-RUN groupadd --gid ${NB_GID} --non-unique users \
+RUN (getent group ${NB_GID} || groupadd --gid ${NB_GID} --non-unique users) \
     && useradd --create-home --shell /bin/bash --uid ${NB_UID} --gid ${NB_GID} ${NB_USER}
 
 # Runtime shared-lib deps for the bundled LibRA/Casacore/HPG .so files that
@@ -84,14 +84,10 @@ RUN python3.8 -m venv /home/${NB_USER}/.libra_venv \
        --name libra-cp38 --display-name "LibRA (Python 3.8)" \
     && rm /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl
 
-# --- Sample dataset ---
-# EVLA SNR G55.10s calibrated MS -- small enough to bundle in-image, CPU-imageable
-# with roadrunner. Source: cmake/LibraConfig.cmake data_download convention.
+# Sample MS fetched at startup by entrypoint.sh, not baked into the image.
+COPY --chown=${NB_UID}:${NB_GID} entrypoint.sh /home/${NB_USER}/entrypoint.sh
 RUN mkdir -p /home/${NB_USER}/sample_data \
-    && cd /home/${NB_USER}/sample_data \
-    && wget -q http://casa.nrao.edu/Data/EVLA/SNRG55/SNR_G55_10s.calib.tar.gz \
-    && tar xzf SNR_G55_10s.calib.tar.gz \
-    && rm SNR_G55_10s.calib.tar.gz
+    && chmod +x /home/${NB_USER}/entrypoint.sh
 
 COPY --chown=${NB_UID}:${NB_GID} demo.ipynb /home/${NB_USER}/demo.ipynb
 
@@ -102,6 +98,7 @@ EXPOSE 8888
 # JUPYTER_TOKEN and CONTEXT_PATH are set at deploy time via the Helm chart
 # (helm-libra), sourced from an encrypted values file -- never baked into
 # the image or left blank.
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sh", "-c", "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser \
      --ServerApp.token=\"${JUPYTER_TOKEN}\" \
      --ServerApp.base_url=\"${CONTEXT_PATH:-/}\" \
