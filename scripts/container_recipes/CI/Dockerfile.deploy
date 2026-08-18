@@ -7,10 +7,13 @@
 #
 # Standalone deployment target (e.g. a single AWS instance) -- not run under
 # JupyterHub, so no docker-stacks base image / singleuser scaffolding needed.
-# Built directly on Ubuntu 24.04 instead of quay.io/jupyter/base-notebook to
+# Built directly on Ubuntu 22.04 instead of quay.io/jupyter/base-notebook to
 # avoid the ~1-1.5GB conda/mamba stack that image carries just to run
-# JupyterLab.
-FROM ubuntu:24.04
+# JupyterLab. Pinned to 22.04 (not 24.04) because its wcslib package still
+# provides libwcs.so.7, matching the soname the wheel's pybind11 extension
+# links against (built in libra-deps against Rocky 8's wcslib-7.12). Ubuntu
+# 24.04 bumped to libwcs.so.8, which breaks the wheel at import time.
+FROM ubuntu:22.04
 
 LABEL Description="LibRA deployment container (CPU-only) -- wheel install + sample data + demo notebook"
 
@@ -38,7 +41,7 @@ RUN (getent passwd ${NB_UID} | cut -d: -f1 | xargs -r userdel --remove) \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libblas3 liblapack3 libgfortran5 libgsl27 \
     libreadline8 libtinfo6 \
-    libcfitsio10t64 libwcs8 \
+    libcfitsio9 libwcs7 \
     libcurl4 zlib1g libbz2-1.0 \
     wget ca-certificates \
     python3 python3-pip python3-venv \
