@@ -1,0 +1,61 @@
+{{- if not .Values.jupyterToken -}}
+{{- fail "jupyterToken is required -- set it via an encrypted values file, never in plaintext" }}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "libra.fullname" . }}
+  labels:
+    {{- include "libra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "libra.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "libra.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      imagePullSecrets:
+      {{- with .Values.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.imageCredentials.password }}
+        - name: '{{ include "libra.fullname" . }}-registrykey'
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: JUPYTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "libra.fullname" . }}-jupyter-token
+                  key: token
+            - name: CONTEXT_PATH
+              value: {{ .Values.contextPath | quote }}
+          ports:
+            - name: http
+              containerPort: 8888
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: '{{ .Values.contextPath | trimSuffix "/" }}/login'
+              port: http
+          readinessProbe:
+            httpGet:
+              path: '{{ .Values.contextPath | trimSuffix "/" }}/login'
+              port: http
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
