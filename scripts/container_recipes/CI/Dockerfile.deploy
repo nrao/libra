@@ -7,13 +7,15 @@
 #
 # Standalone deployment target (e.g. a single AWS instance) -- not run under
 # JupyterHub, so no docker-stacks base image / singleuser scaffolding needed.
-# Built directly on Ubuntu 22.04 instead of quay.io/jupyter/base-notebook to
-# avoid the ~1-1.5GB conda/mamba stack that image carries just to run
-# JupyterLab. Pinned to 22.04 (not 24.04) because its wcslib package still
-# provides libwcs.so.7, matching the soname the wheel's pybind11 extension
-# links against (built in libra-deps against Rocky 8's wcslib-7.12). Ubuntu
-# 24.04 bumped to libwcs.so.8, which breaks the wheel at import time.
-FROM ubuntu:22.04
+# Built on rockylinux:8 -- the same OS family as libra-deps (Dockerfile.base),
+# which is what the wheel's pybind11 extension is actually compiled and linked
+# against. Ubuntu 22.04 was tried first and matched wcslib's soname
+# (libwcs.so.7) but NOT cfitsio/gsl/readline -- jammy's package versions for
+# those are newer majors (libcfitsio.so.9, libgsl.so.27, libreadline.so.8)
+# than what Rocky 8 links against (.so.7, .so.23, .so.7 respectively), so
+# imports failed at runtime one soname at a time. Matching the build OS
+# exactly avoids this soname whack-a-mole.
+FROM rockylinux:8
 
 LABEL Description="LibRA deployment container (CPU-only) -- wheel install + sample data + demo notebook"
 
@@ -28,38 +30,37 @@ RUN (getent passwd ${NB_UID} | cut -d: -f1 | xargs -r userdel --remove) \
 
 # Runtime shared-lib deps for the bundled LibRA/Casacore/HPG .so files that
 # aren't already vendored into the wheel's _libs/ (verified via ldd against
-# the actual built wheel, not guessed):
-#   blas/lapack   - casacore scimath
-#   gfortran      - casacore/mirlib Fortran routines
-#   gsl           - casacore coordinates/measures
-#   readline/ncurses (tinfo) - casacore table shell/logging
+# the actual built wheel, not guessed) -- same non-devel packages as
+# Dockerfile.base's -devel install, so sonames match exactly:
+#   blas/lapack     - casacore scimath
+#   libgfortran     - casacore/mirlib Fortran routines
+#   gsl             - casacore coordinates/measures
+#   readline/ncurses - casacore table shell/logging
 #   cfitsio, wcslib - casacore fits/coordinates
-#   curl          - casacore data download utilities (measuresdata-update etc.)
-#   zlib, bzip2   - table compression
-# python3/python3-pip/python3-venv - notebook server interpreter (stock 24.04
-# Python, separate from the cp38 wheel venv below)
-#
-# noninteractive: avoids jammy's tzdata debconf prompt hanging the build.
-RUN export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends \
-    libblas3 liblapack3 libgfortran5 libgsl27 \
-    libreadline8 libtinfo6 \
-    libcfitsio9 libwcs7 \
-    libcurl4 zlib1g libbz2-1.0 \
-    wget ca-certificates \
-    python3 python3-pip python3-venv \
-    software-properties-common gnupg \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    python3.8 python3.8-venv python3.8-distutils \
-    && apt-get purge -y software-properties-common gnupg \
-    && apt-get autoremove -y \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+#   libgomp         - OpenMP (HPG/fftw threaded paths); was missing entirely
+#                     on the Ubuntu image, not just version-mismatched
+#   libcurl         - casacore data download utilities (measuresdata-update etc.)
+#   zlib, bzip2-libs - table compression
+# python38/python38-pip - notebook server interpreter AND the wheel's venv
+# interpreter (Rocky 8 ships python38 natively -- no deadsnakes PPA needed).
+RUN dnf -y clean all \
+    && dnf -y install epel-release \
+    && dnf install -y dnf-plugins-core \
+    && dnf config-manager --set-enabled powertools \
+    && dnf -y install \
+       readline ncurses blas lapack libgfortran gsl \
+       cfitsio wcslib libgomp libcurl zlib bzip2-libs \
+       wget ca-certificates \
+       python38 python38-pip \
+    && dnf clean all
 
 # --- Notebook server ---
-# Plain JupyterLab in its own venv (system Python 3.12), independent of the
+# Plain JupyterLab in its own venv (Python 3.8), independent of the
 # LibRA cp38 venv below. No tini/start-notebook.sh/JupyterHub singleuser
 # scaffolding -- this container is launched standalone, not under a Hub.
-RUN python3 -m venv /opt/jupyter_venv \
+# Uses python3.8 explicitly (not python3, which stays Rocky 8's stock 3.6
+# via /usr/bin/python3 unless alternatives are repointed).
+RUN python3.8 -m venv /opt/jupyter_venv \
     && /opt/jupyter_venv/bin/pip install --no-cache-dir --upgrade pip \
     && /opt/jupyter_venv/bin/pip install --no-cache-dir jupyterlab \
     && ln -s /opt/jupyter_venv/bin/jupyter /usr/local/bin/jupyter
@@ -67,13 +68,12 @@ RUN python3 -m venv /opt/jupyter_venv \
 USER ${NB_UID}
 
 # --- Python 3.8 interpreter for the LibRA wheel ---
-# TEMPORARY: build-wheel (container-build.yml) compiles the pybind11
-# extension inside ardgnrao/libra-deps:cpu (Rocky 8), whose only stock
-# Python is 3.8 -- hence the cp38 wheel tag. Ubuntu noble (this image's
-# base) dropped python3.8 from its own repos, so it's pulled from the
-# deadsnakes PPA instead. This is a stopgap: the real fix is building the
-# wheel against a current Python in libra-deps so this whole interpreter
-# stays unnecessary -- tracked as follow-up work, not a permanent fixture.
+# build-wheel (container-build.yml) compiles the pybind11 extension inside
+# ardgnrao/libra-deps:cpu (Rocky 8), whose stock Python is 3.8 -- hence the
+# cp38 wheel tag. This image is Rocky 8 too, so python38 comes from its own
+# repos natively -- no deadsnakes PPA workaround needed. Still tracked as
+# follow-up work to build the wheel against a current Python in libra-deps
+# and collapse this and the notebook venv above into one interpreter.
 
 # --- LibRA wheel ---
 # Built by the build-wheel CI job (container-build.yml), CPU-only
