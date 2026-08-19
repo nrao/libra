@@ -4,7 +4,7 @@ name: LibRA Container Build
 #   base -> deps -> components -> tests
 # Each stage builds, pushes to Docker Hub, and gates the next.
 # CPU-only build (Kokkos OpenMP/Serial backend, LIBRA_ENABLE_CUDA_BACKEND=OFF).
-# Runs on the prod-managed aws-arc-runner-dev ARC pool (kubernetes mode, no
+# Runs on the prod-managed ARC runner pool (kubernetes mode, no
 # privileged DinD) -- image builds use buildx's kubernetes driver, and the
 # test job runs inside the tests image via a job-level container instead of
 # `docker run`.
@@ -59,7 +59,7 @@ env:
 
 jobs:
   check-changes:
-    runs-on: aws-arc-runner-dev
+    runs-on: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     outputs:
