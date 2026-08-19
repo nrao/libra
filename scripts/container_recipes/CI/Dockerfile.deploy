@@ -48,7 +48,7 @@ RUN dnf -y clean all \
     && dnf -y install epel-release \
     && dnf install -y dnf-plugins-core \
     && dnf config-manager --set-enabled powertools \
-    && dnf -y install \
+    && dnf -y install --allowerasing \
        readline ncurses blas lapack libgfortran gsl \
        cfitsio wcslib libgomp libcurl zlib bzip2-libs \
        wget ca-certificates \
