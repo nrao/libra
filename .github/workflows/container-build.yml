@@ -59,7 +59,7 @@ env:
 
 jobs:
   check-changes:
-    runs-on: aws-arc-runner-lapis-dev
+    runs-on: [arc-runner, dev, lapis]
     container:
       image: docker:cli
     outputs:
