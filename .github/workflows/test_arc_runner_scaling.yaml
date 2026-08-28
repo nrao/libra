@@ -8,7 +8,10 @@ jobs:
     name: Fake build job
     runs-on: 
       group: aws-arc
-      labels: aws-arc-runner-lapis-dev    
+      labels: aws-arc-runner-lapis-dev
+
+    container:
+      image: almalinux:latest
 
     strategy:
       fail-fast: false
@@ -19,6 +22,7 @@ jobs:
       - name: Report node properties
         run: |
           echo "host info:"
+          cat /etc/redhat-release
           uname -a
           nproc
           free -h
