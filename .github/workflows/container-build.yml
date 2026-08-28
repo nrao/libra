@@ -59,7 +59,9 @@ env:
 
 jobs:
   check-changes:
-    runs-on: [arc-runner, dev, lapis]
+    runs-on:
+      group: aws-arc
+      labels: [arc-runner, dev, lapis]
     container:
       image: docker:cli
     outputs:
@@ -154,7 +156,7 @@ jobs:
       needs.check-changes.outputs.skip_chain != 'true'
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     steps:
@@ -205,7 +207,7 @@ jobs:
       needs.check-changes.outputs.skip_chain != 'true'
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     steps:
@@ -257,7 +259,7 @@ jobs:
       (needs.deps.result == 'success' || needs.deps.result == 'skipped')
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     steps:
@@ -309,7 +311,7 @@ jobs:
       needs.components.result == 'success'
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     steps:
@@ -361,7 +363,7 @@ jobs:
       (needs.tests.result == 'success' || needs.tests.result == 'skipped')
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: ardgnrao/libra-tests:cpu
       credentials:
@@ -389,7 +391,7 @@ jobs:
       (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped')
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: ardgnrao/libra-deps:cpu
       credentials:
@@ -444,7 +446,7 @@ jobs:
       (needs.build-wheel.result == 'success' || needs.build-wheel.result == 'skipped')
     runs-on:
       group: aws-arc
-      labels: aws-arc-runner-dev
+      labels: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     steps:
