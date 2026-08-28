@@ -61,7 +61,7 @@ jobs:
   check-changes:
     runs-on:
       group: aws-arc
-      labels: [arc-runner, dev, lapis]
+      labels: aws-arc-runner-lapis-dev
     container:
       image: docker:cli
     outputs:
