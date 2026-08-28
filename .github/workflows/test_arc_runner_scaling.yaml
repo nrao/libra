@@ -22,6 +22,7 @@ jobs:
       - name: Report node properties
         run: |
           echo "host info:"
+          dnf install -y procps-ng
           cat /etc/redhat-release
           uname -a
           nproc
