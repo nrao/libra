@@ -38,7 +38,7 @@ on:
         default: false
 
 concurrency:
-  group: container-build-${{ github.ref }}
+  group: container-build-${{ github.run_id }}
   cancel-in-progress: true
 
 env:
