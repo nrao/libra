@@ -5,8 +5,7 @@
 # a first-run smoke test + demo imaging pass. No compilers, no LibRA source
 # tree, no dev headers.
 #
-# Standalone deployment target (e.g. a single AWS instance) -- not run under
-# JupyterHub, so no docker-stacks base image / singleuser scaffolding needed.
+# Singleuser image, spawned per-user by KubeSpawner under JupyterHub.
 # Built on rockylinux:8 -- the same OS family as libra-deps (Dockerfile.base),
 # which is what the wheel's pybind11 extension is actually compiled and linked
 # against. Ubuntu 22.04 was tried first and matched wcslib's soname
@@ -56,15 +55,16 @@ RUN dnf -y clean all \
     && dnf clean all
 
 # --- Notebook server ---
-# Plain JupyterLab in its own venv (Python 3.8), independent of the
-# LibRA cp38 venv below. No tini/start-notebook.sh/JupyterHub singleuser
-# scaffolding -- this container is launched standalone, not under a Hub.
+# JupyterLab + JupyterHub in its own venv (Python 3.8), independent of
+# the LibRA cp38 venv below. jupyterhub is required for
+# jupyterhub-singleuser, KubeSpawner's default spawn command.
 # Uses python3.8 explicitly (not python3, which stays Rocky 8's stock 3.6
 # via /usr/bin/python3 unless alternatives are repointed).
 RUN python3.8 -m venv /opt/jupyter_venv \
     && /opt/jupyter_venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/jupyter_venv/bin/pip install --no-cache-dir jupyterlab \
-    && ln -s /opt/jupyter_venv/bin/jupyter /usr/local/bin/jupyter
+    && /opt/jupyter_venv/bin/pip install --no-cache-dir jupyterlab jupyterhub \
+    && ln -s /opt/jupyter_venv/bin/jupyter /usr/local/bin/jupyter \
+    && ln -s /opt/jupyter_venv/bin/jupyterhub-singleuser /usr/local/bin/jupyterhub-singleuser
 
 USER ${NB_UID}
 
@@ -102,11 +102,8 @@ WORKDIR /home/${NB_USER}
 
 EXPOSE 8888
 
-# JUPYTER_TOKEN and CONTEXT_PATH are set at deploy time via the Helm chart
-# (helm-libra), sourced from an encrypted values file -- never baked into
-# the image or left blank.
+# KubeSpawner drives jupyterhub-singleuser directly, passing its own env
+# (JUPYTERHUB_API_TOKEN, JUPYTERHUB_SERVICE_PREFIX, etc.) -- no
+# JUPYTER_TOKEN/CONTEXT_PATH args here.
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["sh", "-c", "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser \
-     --ServerApp.token=\"${JUPYTER_TOKEN}\" \
-     --ServerApp.base_url=\"${CONTEXT_PATH:-/}\" \
-     --ServerApp.allow_origin='*'"]
+CMD ["jupyterhub-singleuser", "--ip=0.0.0.0", "--port=8888"]
