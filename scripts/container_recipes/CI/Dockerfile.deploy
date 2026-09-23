@@ -66,8 +66,6 @@ RUN python3.8 -m venv /opt/jupyter_venv \
     && ln -s /opt/jupyter_venv/bin/jupyter /usr/local/bin/jupyter \
     && ln -s /opt/jupyter_venv/bin/jupyterhub-singleuser /usr/local/bin/jupyterhub-singleuser
 
-USER ${NB_UID}
-
 # --- Python 3.8 interpreter for the LibRA wheel ---
 # build-wheel (container-build.yml) compiles the pybind11 extension inside
 # ardgnrao/libra-deps:cpu (Rocky 8), whose stock Python is 3.8 -- hence the
@@ -82,21 +80,23 @@ USER ${NB_UID}
 # the deploy job downloads the build-wheel artifact first. Installed into
 # its own cp38 venv and registered as a separate Jupyter kernel -- it can't
 # share the notebook server's default (newer) Python environment.
-COPY --chown=${NB_UID}:${NB_GID} libra-0.1.0-cp38-cp38-linux_x86_64.whl /tmp/
-RUN python3.8 -m venv /home/${NB_USER}/.libra_venv \
-    && /home/${NB_USER}/.libra_venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /home/${NB_USER}/.libra_venv/bin/pip install --no-cache-dir --no-deps /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl \
-    && /home/${NB_USER}/.libra_venv/bin/pip install --no-cache-dir numpy matplotlib ipykernel \
-    && /home/${NB_USER}/.libra_venv/bin/python -m ipykernel install --user \
+# Everything the image owns lives outside $HOME: KubeSpawner mounts the
+# per-user volume over /home/jovyan, which would hide it.
+COPY libra-0.1.0-cp38-cp38-linux_x86_64.whl /tmp/
+RUN python3.8 -m venv /opt/libra_venv \
+    && /opt/libra_venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/libra_venv/bin/pip install --no-cache-dir --no-deps /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl \
+    && /opt/libra_venv/bin/pip install --no-cache-dir numpy matplotlib ipykernel \
+    && /opt/libra_venv/bin/python -m ipykernel install --prefix /usr/local \
        --name libra-cp38 --display-name "LibRA (Python 3.8)" \
     && rm /tmp/libra-0.1.0-cp38-cp38-linux_x86_64.whl
 
-# Sample MS fetched at startup by entrypoint.sh, not baked into the image.
-COPY --chown=${NB_UID}:${NB_GID} entrypoint.sh /home/${NB_USER}/entrypoint.sh
-RUN mkdir -p /home/${NB_USER}/sample_data \
-    && chmod +x /home/${NB_USER}/entrypoint.sh
+# Sample MS fetched and demo notebook copied into $HOME at startup by the
+# entrypoint, not baked into $HOME.
+COPY --chmod=755 entrypoint.sh /usr/local/bin/libra-entrypoint.sh
+COPY demo.ipynb /opt/libra/demo.ipynb
 
-COPY --chown=${NB_UID}:${NB_GID} demo.ipynb /home/${NB_USER}/demo.ipynb
+USER ${NB_UID}
 
 WORKDIR /home/${NB_USER}
 
@@ -105,5 +105,5 @@ EXPOSE 8888
 # KubeSpawner drives jupyterhub-singleuser directly, passing its own env
 # (JUPYTERHUB_API_TOKEN, JUPYTERHUB_SERVICE_PREFIX, etc.) -- no
 # JUPYTER_TOKEN/CONTEXT_PATH args here.
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/libra-entrypoint.sh"]
 CMD ["jupyterhub-singleuser", "--ip=0.0.0.0", "--port=8888"]
