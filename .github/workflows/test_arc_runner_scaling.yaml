@@ -8,7 +8,8 @@ jobs:
     name: Fake build job
     runs-on: 
       group: aws-arc
-      labels: aws-arc-runner-lapis-dev
+      #labels: aws-arc-runner-lapis-dev
+      labels: aws-arc-runner-lapis-qa
 
     container:
       image: almalinux:latest
@@ -16,7 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job-id: [1, 2, 3, 4, 5, 6]
+        #job-id: [1, 2, 3, 4, 5, 6]
+        job-id: [1, 2]
 
     steps:
       - name: Report node properties
@@ -27,6 +29,11 @@ jobs:
           uname -a
           nproc
           free -h
+          if [ -f "/proc/driver/nvidia/version" ]; then
+            cat /proc/driver/nvidia/version
+          else
+            echo "No nvidia GPU driver detected"
+          fi
 
       - name: Perform dummy work
         run: |
@@ -34,6 +41,6 @@ jobs:
             while true; do :; done &
           done
 
-          sleep 120
+          sleep 90
           
           kill $(jobs -p) || true
