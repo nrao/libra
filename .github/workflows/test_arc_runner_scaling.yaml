@@ -29,10 +29,10 @@ jobs:
           uname -a
           nproc
           free -h
-          if [ -f "/proc/driver/nvidia/version" ]; then
-            cat /proc/driver/nvidia/version
+          if [ -c "/dev/nvidiactl" ]; then
+            ls -l /dev/nvidia*
           else
-            echo "No nvidia GPU driver detected"
+            echo "No nvidia GPU detected"
           fi
 
       - name: Perform dummy work
